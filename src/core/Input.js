@@ -1,4 +1,6 @@
-// Keyboard / mouse input with pointer lock support.
+// Keyboard / mouse input with pointer lock support, and the touch controls' virtual keys and buttons
+// (ui/TouchControls.js): a virtual key reads as held through down() and pressed through hit() exactly
+// like a real one, so the game reads one set of controls whatever drives them.
 export class Input {
 
 	constructor( dom ) {
@@ -8,8 +10,11 @@ export class Input {
 		this.pressed = new Set();
 		this.look = { x: 0, y: 0 };
 		this.wheel = 0;
-		this.mouseDown = false;
-		this.rightDown = false;
+		this._mouse = [ false, false ]; // physical left / right buttons
+		this.touchButtons = [ false, false ]; // the same, held on the touch controls
+		this.vkeys = new Set(); // keys held on the touch controls
+		this.lookScale = 1; // look sensitivity (lowered while aiming down a gun)
+		this.touch = false; // set once a touch has been seen
 		this.locked = false;
 		this.enabled = true;
 
@@ -22,24 +27,29 @@ export class Input {
 
 		} );
 		window.addEventListener( 'keyup', ( e ) => this.keys.delete( e.code ) );
-		window.addEventListener( 'blur', () => this.keys.clear() );
+		window.addEventListener( 'blur', () => {
+
+			this.keys.clear();
+			this._mouse[ 0 ] = this._mouse[ 1 ] = false;
+
+		} );
 
 		dom.addEventListener( 'mousedown', ( e ) => {
 
-			if ( e.button === 0 ) this.mouseDown = true;
-			if ( e.button === 2 ) this.rightDown = true;
+			if ( e.button === 0 ) this._mouse[ 0 ] = true;
+			if ( e.button === 2 ) this._mouse[ 1 ] = true;
 
 		} );
 		window.addEventListener( 'mouseup', ( e ) => {
 
-			if ( e.button === 0 ) this.mouseDown = false;
-			if ( e.button === 2 ) this.rightDown = false;
+			if ( e.button === 0 ) this._mouse[ 0 ] = false;
+			if ( e.button === 2 ) this._mouse[ 1 ] = false;
 
 		} );
 		dom.addEventListener( 'contextmenu', ( e ) => e.preventDefault() );
 		window.addEventListener( 'mousemove', ( e ) => {
 
-			if ( this.locked || this.mouseDown || this.rightDown ) {
+			if ( this.locked || this._mouse[ 0 ] || this._mouse[ 1 ] ) {
 
 				this.look.x += e.movementX;
 				this.look.y += e.movementY;
@@ -62,15 +72,51 @@ export class Input {
 
 	}
 
+	get mouseDown() {
+
+		return this._mouse[ 0 ] || this.touchButtons[ 0 ];
+
+	}
+
+	get rightDown() {
+
+		return this._mouse[ 1 ] || this.touchButtons[ 1 ];
+
+	}
+
+	// ---- the touch controls
+	setVirtual( code, on ) {
+
+		if ( on && ! this.vkeys.has( code ) ) this.pressed.add( code );
+		if ( on ) this.vkeys.add( code );
+		else this.vkeys.delete( code );
+
+	}
+
+	// a tap: pressed for this frame (hit), not held
+	tap( code ) {
+
+		this.pressed.add( code );
+
+	}
+
+	addLook( dx, dy ) {
+
+		this.look.x += dx;
+		this.look.y += dy;
+
+	}
+
 	requestLock() {
 
+		if ( this.touch ) return;
 		if ( ! this.locked ) this.dom.requestPointerLock?.()?.catch?.( () => {} );
 
 	}
 
 	down( code ) {
 
-		return this.enabled && this.keys.has( code );
+		return this.enabled && ( this.keys.has( code ) || this.vkeys.has( code ) );
 
 	}
 
@@ -83,7 +129,7 @@ export class Input {
 
 	consumeLook() {
 
-		const l = { x: this.look.x, y: this.look.y };
+		const l = { x: this.look.x * this.lookScale, y: this.look.y * this.lookScale };
 		this.look.x = 0;
 		this.look.y = 0;
 		return l;

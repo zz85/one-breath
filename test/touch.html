@@ -1,0 +1,51 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Touch controls</title>
+	<style>body { margin: 0; background: linear-gradient(180deg, #2b7fa8 0%, #10506a 60%, #08303f 100%); height: 100vh; overflow: hidden; } canvas { position: fixed; inset: 0; width: 100vw; height: 100vh; }</style>
+</head>
+<body>
+<canvas></canvas>
+<script type="module">
+// Dev / test page: the touch controls (ui/TouchControls.js) on the real Input (core/Input.js) with a
+// stubbed game. ?mode=swim | walk | boat, ?gun=1 (out), ?loaded=0..2. window.__t exposes them.
+import '../src/ui/ui.css';
+import { Input } from '../src/core/Input.js';
+import { TouchControls } from '../src/ui/TouchControls.js';
+
+const qs = new URLSearchParams( location.search );
+const root = document.createElement( 'div' );
+root.className = 'tw-root';
+document.body.append( root );
+const input = new Input( document.querySelector( 'canvas' ) );
+const toasts = [];
+const spear = { equipped: qs.get( 'gun' ) === '1', phase: 'home', aimLatched: false, gun: { bandsLoaded: Number( qs.get( 'loaded' ) || 0 ) }, stats: { bands: 2 } };
+const player = { mode: qs.get( 'mode' ) || 'swim', surface: 'water', prompt: null };
+const app = { input, player, freeCam: false, qs, audio: null };
+const game = { app, spear, canFish: true, toast: ( t ) => toasts.push( t ) };
+const tc = new TouchControls( { app, game, root } );
+const log = { look: { x: 0, y: 0 }, keys: [], fire: false };
+function frame() {
+
+	player.prompt = spear.equipped ? { key: 'Hold R', text: 'Load the second band   ·   LMB  shoot' } : { key: 'G', text: 'Take out the speargun' };
+	if ( input.hit( 'KeyQ' ) ) spear.aimLatched = ! spear.aimLatched;
+	if ( input.hit( 'KeyG' ) ) spear.equipped = ! spear.equipped;
+	tc.update( 1 / 60 );
+	const l = input.consumeLook();
+	log.look.x += l.x; log.look.y += l.y;
+	log.keys = [ ...input.vkeys ].sort();
+	log.fire = input.mouseDown;
+	log.prompt = player.prompt;
+	log.shown = Object.keys( tc.btn ).filter( ( k ) => tc.btn[ k ].classList.contains( 'is-shown' ) );
+	input.endFrame();
+	requestAnimationFrame( frame );
+
+}
+
+requestAnimationFrame( frame );
+window.__t = { tc, input, spear, player, log, toasts };
+</script>
+</body>
+</html>

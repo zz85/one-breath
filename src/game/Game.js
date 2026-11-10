@@ -10,6 +10,7 @@ import { UPGRADES, fuelBurn } from './Gear.js';
 import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
+import { TouchControls } from '../ui/TouchControls.js';
 
 // The spearfishing game on top of the world (the hunt itself: Spearfishing.js):
 //   G          take out / put away the speargun
@@ -147,6 +148,8 @@ export class Game {
 			this.minimap = new Minimap( ui.hud || ui.root, this );
 			this.guide = new Guide( ui, this, this.minimap );
 			ui.onReplayGuide = () => this.guide.replay();
+			// phones and tablets: a stick, look by dragging, buttons (on at the first touch)
+			this.touch = new TouchControls( { app, game: this, root: ui.root } );
 
 		}
 
@@ -191,6 +194,7 @@ export class Game {
 		} );
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
+		if ( this.touch ) this.touch.update( dt );
 
 	}
 

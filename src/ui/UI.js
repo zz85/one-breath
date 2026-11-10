@@ -2152,6 +2152,7 @@ export class UI {
 						${ row( k( 'G' ), 'Speargun<small>Take out / put away</small>' ) }
 						${ row( k( 'R' ), 'Load a band<small>Hold; two pulls for two bands</small>' ) }
 						${ row( k( 'RMB' ), 'Aim<small>Hold: the gun comes up to your eye</small>' ) }
+						${ row( k( 'Q' ), 'Aim on / off<small>For a trackpad</small>' ) }
 						${ row( k( 'LMB' ), 'Shoot, haul the line<small>Hold to haul; E grabs the fish</small>' ) }
 						${ row( k( 'I' ), 'Cooler and fish log' ) }
 						${ row( k( 'F' ), 'Free camera' ) }
@@ -2199,6 +2200,14 @@ export class UI {
 					<span><kbd>F1</kbd>All controls</span>
 				</div>
 			</div>`;
+		// a touch screen without a mouse: the same in the touch controls' words (ui/TouchControls.js)
+		if ( typeof matchMedia !== 'undefined' && matchMedia( '(pointer: coarse)' ).matches && ! matchMedia( '(any-pointer: fine)' ).matches ) {
+
+			el.querySelector( '.tw-start-cta span:last-child' ).textContent = 'Tap to explore';
+			el.querySelector( '.tw-start-keys' ).innerHTML = '<span>Left thumb · move</span><span>Drag right · look</span><span><kbd>Use</kbd>Interact</span>';
+
+		}
+
 		this.root.append( el );
 
 	}

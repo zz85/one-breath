@@ -52,6 +52,8 @@ export class Spearfishing {
 		this.blackT = 0;
 		this.loading = false;
 		this.aiming = false;
+		this.aimLatched = false;
+		this._aimTold = false;
 		this.waterY = 0;
 		this._beatT = 0;
 		this._lastUnder = false;
@@ -139,6 +141,7 @@ export class Spearfishing {
 		if ( ! this.hud && this.game.hud ) this.hud = new SpearHUD( this.game.hud.ui.hud || this.game.hud.ui.root );
 		if ( this.fish && ! this.fish.onStep ) this.fish.onStep = ( h ) => this.moveFish( h );
 		this.waterY = Number.isFinite( p.waterH ) ? p.waterH : 0;
+		inp.lookScale = 1;
 		const camUnder = app.camera.position.y < this.waterY - 0.12;
 		const swimming = p.mode === 'swim';
 
@@ -194,7 +197,23 @@ export class Spearfishing {
 
 		// ---- input
 		const act = gun.equipped && ! panelOpen && ! this.card;
-		this.aiming = act && inp.rightDown && inp.enabled && this.phase === 'home';
+		// aim: hold the right button, or Q (a trackpad, the touch Aim button) to raise / lower the gun
+		if ( act && inp.hit( 'KeyQ' ) ) {
+
+			this.aimLatched = ! this.aimLatched;
+			if ( this.aimLatched && ! this._aimTold ) {
+
+				this._aimTold = true;
+				this.toast( 'Aiming · Q again to lower the gun', 1600 );
+
+			}
+
+		}
+
+		if ( ! gun.equipped ) this.aimLatched = false;
+		this.aiming = act && ( ( inp.rightDown && inp.enabled ) || this.aimLatched ) && this.phase === 'home';
+		// down the shaft the view turns slower: fine aim with a mouse, a trackpad or a finger
+		inp.lookScale = this.aiming ? 0.45 : 1;
 		this.loading = act && rHeld && this.phase === 'home' && gun.bandsLoaded < this.stats.bands;
 		if ( this.loading ) {
 
@@ -876,7 +895,8 @@ export class Spearfishing {
 
 				if ( this.loading ) return { key: 'R', text: 'Pulling the band back to its fin…' };
 				if ( p.mode !== 'swim' ) return { key: 'G', text: 'Get in the water to hunt   ·   G  put the gun away' };
-				return { key: 'RMB', text: 'Hold to aim   ·   LMB  shoot   ·   G  put the gun away' };
+				if ( this.aiming ) return { key: 'LMB', text: 'Shoot   ·   Q  lower the gun' };
+				return { key: 'RMB', text: 'Hold to aim (or Q)   ·   LMB  shoot   ·   G  put the gun away' };
 
 			}
 

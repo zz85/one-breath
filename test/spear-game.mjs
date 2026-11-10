@@ -86,7 +86,7 @@ function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
 	const scene = new E.Scene();
 	const camera = new E.PerspectiveCamera( 60, 1.7, 0.05, 1000 );
 	const keys = new Set();
-	const input = { enabled: true, mouseDown: false, rightDown: false, _hit: new Set(), down: ( k ) => keys.has( k ), hit( k ) { return this._hit.delete( k ); } };
+	const input = { enabled: true, mouseDown: false, rightDown: false, lookScale: 1, _hit: new Set(), down: ( k ) => keys.has( k ), hit( k ) { return this._hit.delete( k ); } };
 	const player = { mode: 'swim', position: new E.Vector3( 0, - depth, 0 ), velocity: new E.Vector3(), waterH: 0, tug: new E.Vector3(), floating: false, frozen: false, swimMul: 1, surface: 'water' };
 	const fish = makeFish( fishList );
 	const app = {
@@ -142,6 +142,14 @@ function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
 	ok( sp.gun.bandsLoaded === 1, 'holding R loads one band' );
 	W.run( 1.6, { r: true } );
 	ok( sp.gun.bandsLoaded === 2, 'and the second' );
+	// Q raises the gun and keeps it up (a trackpad has no held right button); Q again lowers it
+	input._hit.add( 'KeyQ' );
+	W.frame();
+	W.run( 0.3 );
+	ok( sp.aiming && input.lookScale < 1, `Q raises the gun to aim (look ${ input.lookScale })` );
+	input._hit.add( 'KeyQ' );
+	W.frame();
+	ok( ! sp.aiming && input.lookScale === 1, 'Q again lowers it' );
 	W.run( 0.6, { rmb: true } );
 	// line the fish's middle up on the shaft's path: move it to where the shaft points at 2.6 m
 	const g = sp.gun;

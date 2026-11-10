@@ -79,7 +79,7 @@ const CARDS = [
 			${ row( k( 'G' ), 'Take out the speargun' ) }
 			${ row( k( 'Hold', 'R' ), 'Pull a band back to the shaft (two pulls for a two-band gun)' ) }
 			${ row( k( 'C' ), 'Dive (or look down and swim). <kbd>Space</kbd> back up' ) }
-			${ row( k( 'Hold', 'RMB' ), 'Aim down the shaft. Glide in slowly: fish bolt from a fast diver' ) }
+			${ row( k( 'Hold', 'RMB' ), 'Aim down the shaft (or <kbd>Q</kbd> to raise / lower it). Glide in slowly: fish bolt from a fast diver' ) }
 			${ row( k( 'LMB' ), 'Shoot, <b>within about three gun lengths</b>. Behind the eye is a stone shot' ) }
 			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. <b>Ease off when it runs</b>, or the shaft tears out' ) }
 			${ row( k( 'E' ), 'Grab the fish once it is in reach' ) }
@@ -103,7 +103,7 @@ const CARDS = [
 ];
 
 const TIPS = {
-	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly and hold the <b>right mouse button</b> to aim.',
+	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly and hold the <b>right mouse button</b> to aim (on a trackpad, <kbd>Q</kbd>).',
 	contractions: 'Those are <b>contractions</b>: your body asking for air. Head up now, the oxygen runs out fastest on the way up.',
 	fishOn: '<b>Hold the left mouse button</b> to haul it in. When the needle nears the <b>red</b>, let go: the shaft is tearing out of the flesh.',
 	missed: 'Missed. <b>Hold the left mouse button</b> to haul the shaft back on its line, then reload.',
@@ -113,6 +113,21 @@ const TIPS = {
 	joe: '<b>Joe</b> buys your fish. <kbd>E</kbd> to see what he will pay.',
 	marta: '<b>Marta</b> sells upgrades and diesel. <kbd>E</kbd> to see her stock.',
 };
+
+// a tip in the touch controls' words (ui/TouchControls.js)
+const TOUCH_KEYS = { R: 'Load', C: 'Dive', E: 'Use', I: 'Bag', G: 'Gun', Q: 'Aim', Space: 'Up', W: 'Stick', S: 'Stick', A: 'Stick', D: 'Stick' };
+export function touchTip( html ) {
+
+	return html
+		.replace( /<b>Hold the left mouse button<\/b>/g, '<b>Hold Fire</b>' )
+		.replace( /(Hold|hold) the <b>left mouse button<\/b>/g, '$1 <b>Fire</b>' )
+		.replace( /the <b>left mouse button<\/b>/g, '<b>Fire</b>' )
+		.replace( /(hold )?the <b>right mouse button<\/b> to aim/g, 'tap <b>Aim</b>' )
+		.replace( / \(on a trackpad, <kbd>Q<\/kbd>\)/g, '' )
+		.replace( /click to strike|click/g, 'tap' )
+		.replace( /<kbd>(\w+)<\/kbd>/g, ( m, k ) => TOUCH_KEYS[ k ] ? `<kbd>${ TOUCH_KEYS[ k ] }</kbd>` : m );
+
+}
 
 const h = ( tag, cls, html ) => {
 
@@ -372,7 +387,7 @@ export class Guide {
 			this._current = id;
 			this.seen[ id ] = true;
 			this._save();
-			this.coachText.innerHTML = TIPS[ id ];
+			this.coachText.innerHTML = this.game.app.input.touch ? touchTip( TIPS[ id ] ) : TIPS[ id ];
 			this.coach.classList.add( 'is-on' );
 			this._coachT = 7.5;
 

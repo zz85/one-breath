@@ -333,6 +333,9 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		this.post = new PostFX( renderer, { sceneRenderer: this.sceneRenderer, camera, underwater: this.underwater, clouds: this.clouds, sunDir: this.atmosphere.sunDir, haze: this.haze } );
 		G.exposure.value = this.settings.exposure;
 		if ( qs.has( 'scale' ) ) this.settings.renderScale = Number( qs.get( 'scale' ) ) || 1;
+		// phones and tablets (a touch screen and no mouse): a lower internal resolution to start with,
+		// which the temporal upscaler brings back to the screen's; the Performance tab changes it
+		else if ( typeof matchMedia !== 'undefined' && matchMedia( '(pointer: coarse)' ).matches && ! matchMedia( '(any-pointer: fine)' ).matches ) this.settings.renderScale = 0.6;
 		this.setRenderScale( this.settings.renderScale );
 
 		// ---------------------------------------------------------------- audio

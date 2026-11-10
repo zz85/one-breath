@@ -99,6 +99,7 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 | G | Take out / put away the speargun |
 | R | Hold to load a band (two pulls for a two-band gun) |
 | Right mouse | Hold to aim down the shaft |
+| Q | Aim on / off, for a trackpad (then a click shoots, a held click hauls) |
 | Left mouse | Shoot (under water only) · hold to haul the line in |
 | E | Grab a fish that's in reach (also: interact) |
 | I or Tab | Cooler / fish hold and the fish log |
@@ -109,6 +110,12 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 | H | Settings panel |
 | P | Photo mode |
 | F1 or ? | All controls |
+
+On a phone or tablet, touch controls come up at the first touch (or add `?touch` to the URL): put your
+left thumb down anywhere on the left side for a movement stick (push it all the way to sprint), drag on the
+right side to look, and use the buttons that appear for what you can do at the moment: Fire (tap to shoot,
+hold to haul), Aim, Load, Gun, Dive, Up, Use, Cam at the helm, and Bag. The prompts name the buttons.
+Touch screens start at a 60% render scale; change it in the Performance tab.
 
 ### Spearfishing
 
