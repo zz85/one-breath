@@ -2,12 +2,13 @@ import { Vector3 } from '../engine/index.js';
 import { SpearGun } from './SpearGun.js';
 import { SpearAudio } from '../audio/SpearAudio.js';
 import { SpearHUD } from './SpearHUD.js';
-import { hitTest, zoneOf, ZONES, penetration, stepShaft, SpearFight, Apnea, judge, weightKg, swimmerInfo, maxRadius } from './Spear.js';
+import { hitTest, zoneOf, ZONES, penetration, stepShaft, SpearFight, Apnea, judge, weightKg, swimmerInfo, maxRadius, whaleShaft } from './Spear.js';
 
 const CATCH_CARD_MS = 9000;
 const RESPAWN_S = 300; // a taken fish's place in its school is filled again after this (game seconds)
 const BAND_LOAD_S = 1.35; // pulling one band back to its fin under water
 const SECURE_M = 1.05; // line left when the fish is in reach
+const WHALE_HOLD_S = 0.45; // a 30 t whale on a tight line: this long before the shaft rips out
 
 const _a = new Vector3(), _b = new Vector3(), _v = new Vector3(), _p = new Vector3(), _h = new Vector3(), _t = new Vector3();
 const _pull = { x: 0, y: 0, z: 0 };
@@ -39,7 +40,8 @@ export class Spearfishing {
 		};
 
 		this.hud = null;
-		this.phase = 'home'; // home | flying | out | fight | blackout
+		this.phase = 'home'; // home | flying | out | fight | whale | blackout
+		this.whaleHit = null; // the shaft lodged in the whale: { k, tip, dir (frame k's rest space), t, reelOut, tightT }
 		this.shaftVel = new Vector3();
 		this.shaftStuck = false;
 		this.fight = null; // SpearFight
@@ -218,7 +220,8 @@ export class Spearfishing {
 		if ( this.phase === 'flying' ) this.updateFlight( dt );
 		else if ( this.phase === 'out' ) this.updateOut( dt, hauling );
 		else if ( this.phase === 'fight' ) this.updateFight( dt, hauling );
-		if ( this.phase !== 'fight' ) p.tug.set( 0, 0, 0 );
+		else if ( this.phase === 'whale' ) this.updateWhale( dt );
+		if ( this.phase !== 'fight' && this.phase !== 'whale' ) p.tug.set( 0, 0, 0 );
 
 		// ---- the hand: a slow wobble, steadier when aiming, shaky when hypoxic or in a contraction
 		this.contraction = Math.max( 0, this.contraction - dt * 2.5 );
@@ -320,6 +323,10 @@ export class Spearfishing {
 
 		}
 
+		// the whale, where it is near enough to be in the shaft's path this frame
+		const whale = this.app.whale && this.app.whale.ready && this.app.whale.hitTest ? this.app.whale : null;
+		const whaleNear = whale && gun.shaftPos.distanceTo( whale.brain.position ) < 12 + speed * dt;
+
 		for ( let k = 0; k < n; k ++ ) {
 
 			gun.tip( _a );
@@ -355,6 +362,18 @@ export class Spearfishing {
 
 				this.onHit( best, v );
 				return;
+
+			}
+
+			if ( whaleNear ) {
+
+				const wh = whale.hitTest( _b );
+				if ( wh ) {
+
+					this.onWhaleHit( whale, wh, v );
+					return;
+
+				}
 
 			}
 
@@ -451,6 +470,122 @@ export class Spearfishing {
 		const Z = ZONES[ zone ];
 		this.toast( `${ info.name } · ${ Z.label }${ through ? '' : ' (the shaft only lodged)' }`, 2600 );
 		this.placeShaftOnFish();
+
+	}
+
+	// The shaft meets the humpback. Shooting at a whale is harassing a protected animal: the fine
+	// comes whether the shaft goes in or not. Square on and fast from a strong gun, it lodges in
+	// the blubber; otherwise it skips off the skin. Either way the whale flinches and sounds.
+	onWhaleHit( whale, wh, v ) {
+
+		const gun = this.gun, s = this.stats, st = this.game.state;
+		const E = 0.5 * s.shaftMass * v * v;
+		const cos = Math.max( 0, - gun.shaftDir.dot( wh.normal ) );
+		const result = whaleShaft( E, cos );
+		const rule = judge( 'humpback', 14 );
+		this.sfx.hit( Math.min( 1, E / 40 ) * 0.7 );
+		whale.brain.startle( wh.local.x >= 0 ? 1 : - 1 );
+		if ( this.fish ) this.fish.scare( gun.shaftPos, 10, 1 );
+		const paid = st.fine( rule.fine );
+		const fineText = `${ rule.why }. Fined $${ rule.fine.toLocaleString( 'en-US' ) }${ paid < rule.fine ? ` (you could pay $${ paid })` : '' }`;
+		if ( result === 'bounce' ) {
+
+			// skips off the skin, the way it came, and sinks
+			_v.copy( wh.normal ).multiplyScalar( - 2 * gun.shaftDir.dot( wh.normal ) );
+			this.shaftVel.copy( gun.shaftDir ).add( _v ).multiplyScalar( v * 0.12 );
+			gun.shaftPos.addScaledVector( gun.shaftDir, - 0.05 );
+			this.phase = 'out';
+			this.toast( `The shaft skipped off the humpback's skin and it dived. ${ fineText }`, 6000 );
+			return;
+
+		}
+
+		// lodged: the tip sits a hand's width into the blubber, carried with the whale
+		_t.copy( gun.shaftDir ).multiplyScalar( 0.12 );
+		const tipW = _a.copy( _b ).add( _t );
+		const inside = whale.hitTest( tipW );
+		const local = inside ? inside.local : wh.local;
+		this.whaleHit = {
+			k: wh.k, tip: local, dir: whale.frameDirLocal( wh.k, gun.shaftDir, new Vector3() ),
+			t: 0, reelOut: 0, tightT: 0, part: wh.part,
+		};
+		this.shaftVel.set( 0, 0, 0 );
+		this.phase = 'whale';
+		this.placeShaftOnWhale();
+		this.toast( `The shaft stuck in the humpback's ${ wh.part }. It flinched and dived. ${ fineText }`, 6500 );
+
+	}
+
+	placeShaftOnWhale() {
+
+		const W = this.whaleHit, whale = this.app.whale, gun = this.gun;
+		whale.toWorld( W.tip, _b );
+		whale.frameDir( W.k, W.dir, gun.shaftDir ).normalize();
+		gun.shaftPos.copy( _b ).addScaledVector( gun.shaftDir, - gun.shaftL );
+
+	}
+
+	// The whale tows the shaft away. The line comes tight within a second; a reel pays out line
+	// until it's empty. Then the diver is yanked toward the whale, and the shaft rips out of the
+	// blubber: nothing on a speargun holds 30 tonnes.
+	updateWhale( dt ) {
+
+		const W = this.whaleHit, whale = this.app.whale, gun = this.gun, s = this.stats, p = this.app.player;
+		if ( ! W || ! whale ) {
+
+			this.phase = 'out';
+			return;
+
+		}
+
+		W.t += dt;
+		this.placeShaftOnWhale();
+		const reach = gun.shaftPos.distanceTo( gun.lineClip );
+		const max = this.lineMax + W.reelOut;
+		const run = whale.brain.speed;
+		if ( reach > max ) {
+
+			if ( s.reelM > 0 && W.reelOut < s.reelM ) {
+
+				// the reel screams: the line goes out as fast as the whale swims
+				W.reelOut = Math.min( s.reelM, W.reelOut + ( reach - max ) );
+				if ( this.app.audio && this.app.audio.rodLoop ) this.app.audio.rodLoop( 0, run, 0.8 );
+				gun.lineSlack = 0;
+				p.tug.set( 0, 0, 0 );
+				return;
+
+			}
+
+			// tight: the whale drags the diver after it, until the shaft gives
+			W.tightT += dt;
+			gun.lineSlack = 0;
+			_v.copy( gun.shaftPos ).sub( gun.lineClip ).normalize();
+			p.tug.copy( _v ).multiplyScalar( Math.min( run, 4 ) * Math.min( 1, W.tightT / 0.15 ) );
+			this.sfx.twang( 1 );
+			if ( W.tightT > WHALE_HOLD_S ) this.whaleTearOut();
+			return;
+
+		}
+
+		gun.lineSlack = Math.max( 0, 1 - W.t * 1.5 );
+		p.tug.set( 0, 0, 0 );
+
+	}
+
+	whaleTearOut() {
+
+		const gun = this.gun, whale = this.app.whale;
+		this.whaleHit = null;
+		this.phase = 'out';
+		const b = whale && whale.brain;
+		if ( b ) this.shaftVel.set( Math.sin( b.yaw ), 0, Math.cos( b.yaw ) ).multiplyScalar( b.speed * 0.2 );
+		else this.shaftVel.set( 0, 0, 0 );
+		this.shaftVel.y -= 0.3;
+		gun.shaftPos.sub( gun.lineClip ).setLength( Math.min( this.lineMax, gun.shaftPos.distanceTo( gun.lineClip ) ) ).add( gun.lineClip );
+		this.app.player.tug.set( 0, 0, 0 );
+		if ( this.app.audio && this.app.audio.rodLoop ) this.app.audio.rodLoop( 0, 0, 0 );
+		if ( this.app.audio && this.app.audio.lineSnap ) this.app.audio.lineSnap();
+		this.toast( 'The line snapped tight and the shaft ripped out of the blubber. Haul it in', 3200 );
 
 	}
 
@@ -641,6 +776,7 @@ export class Spearfishing {
 		this.shaftVel.set( 0, 0, 0 );
 		this.shaftStuck = false;
 		this.phase = 'home';
+		this.whaleHit = null;
 		if ( this.target && this.fish ) this.fish.pin( this.target.i, false );
 		this.target = null;
 		this.fight = null;
@@ -660,6 +796,7 @@ export class Spearfishing {
 		}
 
 		this.fight = null;
+		this.whaleHit = null;
 		this.gun.shaftHome = true;
 		this.gun.bandsLoaded = 0;
 		this.loading = false;
@@ -717,6 +854,7 @@ export class Spearfishing {
 
 			case 'flying': return null;
 			case 'out': return { key: 'Hold LMB', text: 'Haul the line in to get the shaft back' };
+			case 'whale': return null;
 			case 'fight': {
 
 				const F = this.fight;

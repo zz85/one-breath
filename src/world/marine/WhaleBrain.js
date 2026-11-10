@@ -74,6 +74,8 @@ export class WhaleBrain {
 		this.seq = null;
 		this.state = 'cruise';
 		this.lastWrap = false;
+		this.flinch = 0; // 0..1: the body's jerk away from a hit (decays in ~1 s)
+		this.startles = 0; // counter of startles (read by Whale.js: the fluke slap at the surface)
 		if ( query ) this.slot = query.allocate( 'whale', 1 );
 		this._place( 0 );
 		// seed the history with a straight run-in
@@ -348,6 +350,32 @@ export class WhaleBrain {
 
 	}
 
+	// Hit (a speargun shaft): the whole body jerks away from the side it was hit on, the flukes
+	// drive hard, and the whale breaks off whatever it was doing (a breath at the surface) to
+	// sound: a steep dive to depth at speed, and a few minutes cruising deep before it comes up
+	// again. side: +1 hit on its left flank (+x), -1 on the right. A whale already in the air in a
+	// breach flinches but falls back as it was going.
+	startle( side = 1 ) {
+
+		this.flinch = 1;
+		this.rollV += - side * 0.9; // rolls away from the hit
+		this.yawRate += side * 0.15;
+		this.startles ++;
+		if ( this.seq && this.seq.keys[ this.seq.i ].breach === 'air' ) return;
+		const nearTop = this.backDepth < 2.5;
+		const k = [];
+		// the jerk and the first hard strokes: head down, back humped
+		k.push( { t: 1.6, depth: Math.max( 1.3, this.water - this.y + 1.5 ), pitch: - 0.35, arch: - 0.12, follow: 0.5, speed: 4.6, stroke: 0.32, fluke: nearTop } );
+		// sounding: steep and fast to the deep water
+		k.push( { t: 9, depth: 18, pitch: - 0.55, arch: 0, follow: 0.55, speed: 4.8, stroke: 0.26 } );
+		k.push( { t: 20, depth: 15, pitch: 0, arch: 0, follow: 0.8, speed: 3.6, stroke: 0.18 } );
+		k.push( { t: 40, depth: 12, pitch: 0, arch: 0, follow: 0.85, speed: CRUISE_SPEED, stroke: 0.13 } );
+		this.seq = { keys: k, i: 0, t: 0, blown: false };
+		this.state = 'startled';
+		this.lastWrap = true; // no surfacing on this pass of the route: it stays away from the diver
+
+	}
+
 	// jump to the next key of the sequence (the breach launch ends when the whale breaks through)
 	_nextKey( expect ) {
 
@@ -431,6 +459,10 @@ export class WhaleBrain {
 
 		}
 
+		// the flinch: a hunch of the back and a burst of the flukes, fading over about a second
+		this.flinch *= Math.exp( - dt * 1.4 );
+		if ( this.flinch < 0.01 ) this.flinch = 0;
+
 		// ---- depth: critically damped toward the target, never near the seafloor
 		const x = this.position.x, z = this.position.z;
 		const sy = Math.sin( this.yaw ), cy = Math.cos( this.yaw );
@@ -475,9 +507,9 @@ export class WhaleBrain {
 		this.speed += ( target.speed - this.speed ) * Math.min( 1, dt * 0.5 );
 		const pitchT = Math.atan2( this.vy, Math.max( this.speed, 0.5 ) ) * 0.8 + ( target.pitch || 0 );
 		this.pitch += ( pitchT - this.pitch ) * Math.min( 1, dt * ( target.breach ? 2.5 : target.fluke ? 1.1 : 0.9 ) );
-		this.arch += ( ( target.arch || 0 ) - this.arch ) * k;
+		this.arch += ( ( target.arch || 0 ) - 0.3 * this.flinch - this.arch ) * Math.min( 1, k + this.flinch * dt * 6 );
 		this.follow += ( ( target.follow ?? 0.85 ) - this.follow ) * Math.min( 1, dt * ( target.fluke ? 1.5 : 0.8 ) );
-		this.strokeAmp += ( ( target.stroke ?? 0.1 ) - this.strokeAmp ) * Math.min( 1, dt * 0.6 );
+		this.strokeAmp += ( ( target.stroke ?? 0.1 ) + 0.25 * this.flinch - this.strokeAmp ) * Math.min( 1, dt * ( 0.6 + 4 * this.flinch ) );
 		this.headPitch += ( ( target.blow ? 0.03 : 0 ) - this.headPitch ) * k;
 		// tail beat: slow and heavy, ~5 s per stroke cruising, longer at the surface
 		this.strokePhase += TAU * ( 0.09 + 0.042 * this.speed ) * dt;

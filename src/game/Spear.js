@@ -40,7 +40,20 @@ const SWIMMERS = {
 	stingray: { name: 'Southern stingray', protect: 300, why: 'Rays are protected in the marine park' },
 	eagleRay: { name: 'Spotted eagle ray', protect: 400, why: 'Rays are protected in the marine park' },
 	remora: { name: 'Remora', worthless: true },
+	// marine mammals: shooting at one at all is harassment, whether the shaft goes in or not
+	humpback: { name: 'Humpback whale', protect: 5000, why: 'Humpback whales are protected: shooting at one is a serious offence' },
 };
+
+// What a speargun does to a whale: a humpback's skin and the blubber under it (10-15 cm) take a
+// shaft only when it comes in fast and square; it can't reach anything that matters under it.
+// E: the shaft's kinetic energy (J), cos: the cosine of its angle to the skin's normal.
+export const WHALE_LODGE_J = 30;
+export function whaleShaft( E, cos ) {
+
+	if ( cos < 0.45 || E * cos * cos < WHALE_LODGE_J ) return 'bounce';
+	return 'lodge';
+
+}
 
 // below this many grams a shaft leaves nothing to sell (tiny reef fish, silversides)
 export const TOO_SMALL_KG = 0.12;

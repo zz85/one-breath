@@ -54,6 +54,7 @@ export class Whale {
 		this._blowAcc = 0;
 		this._dropAcc = 0;
 		this._slaps = 0;
+		this._startles = 0;
 
 	}
 
@@ -77,6 +78,7 @@ export class Whale {
 			}
 
 			this._setupRig( manifest );
+			this._setupHull( manifest, bin );
 			this.material = this._createMaterial( manifest );
 			for ( const lv of manifest.levels ) {
 
@@ -269,6 +271,84 @@ export class Whale {
 
 	}
 
+	// ------------------------------------------------------------------ hull (for hits)
+
+	// The body's cross-section at each spine frame, from the mesh: half-width, and height above and
+	// below the centreline (the flukes are wide and thin, the chest round). The flippers aren't in
+	// it: a shaft that only meets a flipper passes. Built from the middle level of detail.
+	_setupHull( m, bin ) {
+
+		const lv = m.levels[ Math.min( 1, m.levels.length - 1 ) ];
+		const n = lv.vertices;
+		const P = new Float32Array( bin, lv.position, n * 3 ), R = new Float32Array( bin, lv.rig, n * 4 );
+		const rx = new Float32Array( K ), ru = new Float32Array( K ), rd = new Float32Array( K );
+		for ( let v = 0; v < n; v ++ ) {
+
+			const part = R[ v * 4 + 1 ];
+			if ( part > 0.5 && part < 2.5 ) continue; // the flippers
+			const z = R[ v * 4 ];
+			const fi = THREE.MathUtils.clamp( ( this.zHead - z ) / this.dz, 0, K - 1.001 );
+			const i = Math.floor( fi ), t = fi - i;
+			const yc = this.rest[ i ].y + ( this.rest[ i + 1 ].y - this.rest[ i ].y ) * t;
+			const k = Math.round( fi );
+			const x = Math.abs( P[ v * 3 ] ), y = P[ v * 3 + 1 ] - yc;
+			rx[ k ] = Math.max( rx[ k ], x );
+			if ( y > 0 ) ru[ k ] = Math.max( ru[ k ], y ); else rd[ k ] = Math.max( rd[ k ], - y );
+
+		}
+
+		// frames with no vertex of their own take their neighbours'
+		for ( const r of [ rx, ru, rd ] ) for ( let k = 0; k < K; k ++ ) if ( r[ k ] === 0 ) r[ k ] = Math.max( k > 0 ? r[ k - 1 ] : 0, k < K - 1 ? r[ k + 1 ] : 0 );
+		this.hull = { rx, ru, rd };
+		this.flukeZ = m.flukeRootZ;
+
+	}
+
+	// The point p (world) inside the body? -> { k, local (rest frame), normal (world), part } or
+	// null. Each frame owns the slab of the body half a frame spacing either side of it.
+	hitTest( p, out = {} ) {
+
+		if ( ! this.ready || ! this.hull ) return null;
+		if ( p.distanceTo( this.brain.position ) > 11 ) return null;
+		const H = this.hull;
+		for ( let k = 0; k < K; k ++ ) {
+
+			_v.copy( p ).sub( this.pos[ k ] );
+			if ( _v.lengthSq() > 9 ) continue;
+			_q.copy( this.rot[ k ] ).invert();
+			_v.applyQuaternion( _q );
+			if ( Math.abs( _v.z ) > this.dz * 0.5 ) continue;
+			const rx = Math.max( 0.05, H.rx[ k ] ), ry = Math.max( 0.05, _v.y > 0 ? H.ru[ k ] : H.rd[ k ] );
+			const e = ( _v.x / rx ) ** 2 + ( _v.y / ry ) ** 2;
+			if ( e > 1 ) continue;
+			out.k = k;
+			out.local = new THREE.Vector3( _v.x, _v.y + this.rest[ k ].y, _v.z + this.rest[ k ].z );
+			// outward normal of the ellipse, to world
+			out.normal = new THREE.Vector3( _v.x / ( rx * rx ), _v.y / ( ry * ry ), 0 ).normalize().applyQuaternion( this.rot[ k ] );
+			const z = this.rest[ k ].z;
+			out.part = z < this.flukeZ ? 'flukes' : z < - 4.5 ? 'tail stock' : z > 2.5 ? 'head' : _v.y < - 0.4 * ry ? 'belly' : _v.y > 0.6 * ry ? 'back' : 'flank';
+			return out;
+
+		}
+
+		return null;
+
+	}
+
+	// a direction in frame k's rest space -> world
+	frameDir( k, local, out ) {
+
+		return out.copy( local ).applyQuaternion( this.rot[ k ] );
+
+	}
+
+	// world -> frame k's rest space (a direction)
+	frameDirLocal( k, world, out ) {
+
+		return out.copy( world ).applyQuaternion( _q.copy( this.rot[ k ] ).invert() );
+
+	}
+
 	// world position of a rest-frame point (CPU copy of the vertex shader)
 	toWorld( local, out ) {
 
@@ -346,6 +426,26 @@ export class Whale {
 				const vel = new THREE.Vector3( ( Math.random() - 0.5 ) * 3, 4.5 + Math.random() * 3, ( Math.random() - 0.5 ) * 3 );
 				spray.emit( p, vel, 18, 0.25, SPRAY.SPRAY, { spread: 2.4, jitter: 0.6, life: 2.2, sizeJitter: 0.8 } );
 				spray.emit( p, vel, 30, 0.022, SPRAY.DROPLET, { spread: 3, jitter: 0.5, life: 2 } );
+
+			}
+
+		}
+
+		// startled at the surface: a crash of white water where the flukes drive down
+		if ( b.startles !== this._startles ) {
+
+			this._startles = b.startles;
+			const p = this.toWorld( _v.set( 0, this.rest[ K - 1 ].y, this.manifest.notchZ + 0.6 ), _v2 );
+			if ( p.y > b.water - 2.5 ) {
+
+				p.y = b.water + 0.1;
+				for ( let k = 0; k < 6; k ++ ) {
+
+					const vel = new THREE.Vector3( ( Math.random() - 0.5 ) * 4, 5 + Math.random() * 4, ( Math.random() - 0.5 ) * 4 );
+					spray.emit( p, vel, 24, 0.3, SPRAY.SPRAY, { spread: 3, jitter: 0.6, life: 2.4, sizeJitter: 0.8 } );
+					spray.emit( p, vel, 36, 0.024, SPRAY.DROPLET, { spread: 3.5, jitter: 0.5, life: 2.2 } );
+
+				}
 
 			}
 

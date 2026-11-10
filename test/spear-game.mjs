@@ -5,6 +5,8 @@
 import * as E from '../src/engine/index.js';
 import { Spearfishing } from '../src/game/Spearfishing.js';
 import { GameState } from '../src/game/GameState.js';
+import { Whale } from '../src/world/marine/Whale.js';
+import { readFileSync } from 'node:fs';
 
 let fails = 0;
 const ok = ( c, msg ) => {
@@ -62,7 +64,24 @@ function makeFish( list ) {
 
 }
 
-function makeWorld( fishList, { depth = 6 } = {} ) {
+// the humpback with its rig and hull from the baked model, without the GPU material: the brain
+// and the pose run on the CPU as in the game
+function makeWhale() {
+
+	const dir = new URL( '../public/models/whale/', import.meta.url ).pathname;
+	const m = JSON.parse( readFileSync( dir + 'humpback.json' ) ), b = readFileSync( dir + 'humpback.bin' );
+	const w = new Whale( { scene: new E.Scene(), terrain: { heightAt: () => - 40 } } );
+	w.manifest = m;
+	w._setupRig( m );
+	w._setupHull( m, b.buffer.slice( b.byteOffset, b.byteOffset + b.byteLength ) );
+	w.ready = true;
+	w._pose();
+	w.step = ( dt ) => { w.brain.update( dt ); w._pose(); };
+	return w;
+
+}
+
+function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
 
 	const scene = new E.Scene();
 	const camera = new E.PerspectiveCamera( 60, 1.7, 0.05, 1000 );
@@ -73,14 +92,16 @@ function makeWorld( fishList, { depth = 6 } = {} ) {
 	const app = {
 		scene, camera, input, player, freeCam: false, audio: null,
 		terrainData: { heightAt: () => - 12 },
-		reef: { fish, floorHeightAt: () => - 12 },
+		reef: { fish, floorHeightAt: () => whale ? - 40 : - 12 },
+		whale,
 	};
+	if ( whale ) app.terrainData = { heightAt: () => - 40 };
 	const toasts = [];
 	const game = { app, state: new GameState( null ), hud: null, hour: 12, toast: ( t ) => toasts.push( t ) };
 	const sp = new Spearfishing( game );
 	sp.applyGear( game.state.stats );
 	const W = {
-		sp, game, app, fish, keys, input, player, toasts,
+		sp, game, app, fish, keys, input, player, toasts, look: new E.Vector3( 0, 0, - 1 ),
 		// one frame: the player (stubbed: follows its tug), the camera at the eye, the game, the fish
 		frame( dt = 1 / 60, { lmb = false, rmb = false, r = false } = {} ) {
 
@@ -90,10 +111,11 @@ function makeWorld( fishList, { depth = 6 } = {} ) {
 			W._lmb = lmb;
 			player.position.addScaledVector( player.tug, dt );
 			camera.position.copy( player.position );
-			camera.lookAt( player.position.x, player.position.y, player.position.z - 1 );
+			camera.lookAt( player.position.x + W.look.x, player.position.y + W.look.y, player.position.z + W.look.z );
 			camera.updateMatrixWorld();
 			sp.update( dt, { can: true, lDown, lHeld: lmb, rHeld: r, panelOpen: false } );
 			fish.step( dt );
+			if ( whale ) whale.step( dt );
 
 		},
 		run( s, opts ) {
@@ -224,6 +246,73 @@ function makeWorld( fishList, { depth = 6 } = {} ) {
 	}
 
 	ok( game.state.inventory.length === 0 && game.state.money === 500, `no grouper on the stringer, fined $500 (purse $${ game.state.money })` );
+
+}
+
+// ---- a shot at the humpback: the fine, the flinch and the dive; a strong gun's shaft lodges in
+// the blubber and rips out when the line comes tight, a weak one skips off the skin
+for ( const gunLevel of [ 2, 0 ] ) {
+
+	const whale = makeWhale();
+	const W = makeWorld( [ { name: 'grunt', model: 'grunt', L: 0.25, p: [ 500, - 6, 500 ], h: [ 1, 0, 0 ] } ], { whale } );
+	const { sp, input, game } = W;
+	game.state.money = 8000;
+	game.state.upgrades.gun = gunLevel;
+	game.state.upgrades.shaft = gunLevel ? 2 : 0;
+	sp.applyGear( game.state.stats );
+	input._hit.add( 'KeyG' );
+	W.frame();
+	W.run( 3.4, { r: true } );
+	const B = whale.brain;
+	// 2 m off its left flank, level with the middle of the body, square on
+	const place = () => {
+
+		const k = whale.rootIndex - 2;
+		const fwd = new E.Vector3( 0, 0, 1 ).applyQuaternion( whale.rot[ k ] );
+		const left = new E.Vector3( 1, 0, 0 ).applyQuaternion( whale.rot[ k ] );
+		W.player.position.copy( whale.pos[ k ] ).addScaledVector( left, 3.2 ).addScaledVector( fwd, 0.5 );
+		W.look.copy( left ).negate();
+
+	};
+
+	place();
+	W.run( 0.6, { rmb: true } );
+	place();
+	const before = { money: game.state.money, fines: game.state.fines || 0, depth: B.water - B.y };
+	W.frame( 1 / 60, { rmb: true, lmb: true } );
+	for ( let t = 0; t < 0.4 && sp.phase === 'flying'; t += 1 / 60 ) W.frame();
+	const label = gunLevel ? 'carbon gun' : 'wooden gun';
+	ok( ( game.state.fines || 0 ) - before.fines === 5000, `${ label }: a shot at the whale is fined $5,000 (${ ( game.state.fines || 0 ) - before.fines })` );
+	ok( W.toasts.some( ( t ) => /Humpback whales are protected/.test( t ) ), `${ label }: the fine is called: "${ W.toasts.at( - 1 ) }"` );
+	ok( B.state === 'startled' && B.flinch > 0.5, `${ label }: the whale flinches and breaks off (${ B.state }, flinch ${ B.flinch.toFixed( 2 ) })` );
+	if ( gunLevel ) {
+
+		ok( sp.phase === 'whale', `the carbon gun's shaft lodges in the blubber (${ sp.phase })` );
+		let maxTug = 0;
+		for ( let t = 0; t < 6 && sp.phase === 'whale'; t += 1 / 60 ) {
+
+			W.frame();
+			maxTug = Math.max( maxTug, W.player.tug.length() );
+
+		}
+
+		ok( sp.phase === 'out' && ! sp.whaleHit, `the whale tows the line tight and the shaft rips out (${ sp.phase })` );
+		ok( maxTug > 1.5, `the diver is yanked toward the whale first (${ maxTug.toFixed( 1 ) } m/s)` );
+
+	} else ok( sp.phase === 'out', `the wooden gun's shaft skips off the skin (${ sp.phase })` );
+	let vMax = 0;
+	for ( let t = 0; t < 12; t += 1 / 60 ) {
+
+		W.frame();
+		vMax = Math.max( vMax, B.speed );
+
+	}
+
+	ok( B.water - B.y > before.depth + 4, `it sounds: ${ before.depth.toFixed( 1 ) } m -> ${ ( B.water - B.y ).toFixed( 1 ) } m deep` );
+	ok( vMax > 4, `and swims off fast (${ vMax.toFixed( 1 ) } m/s at most, cruising ${ 2.6 })` );
+	// it comes back to its route's cruise in time
+	W.run( 75 );
+	ok( B.state === 'cruise', `after a while it settles back to cruising (${ B.state })` );
 
 }
 

@@ -84,7 +84,7 @@ const CARDS = [
 			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. <b>Ease off when it runs</b>, or the shaft tears out' ) }
 			${ row( k( 'E' ), 'Grab the fish once it is in reach' ) }
 		</div>
-		<p style="margin:0;color:var(--tw-ink-3);font-size:var(--tw-fs-sm)">Every dive is one breath: turn back up at the first <b>contractions</b>. Protected fish (parrotfish, Nassau grouper, tarpon, turtles, rays) and undersized ones cost you a fine.</p>`,
+		<p style="margin:0;color:var(--tw-ink-3);font-size:var(--tw-fs-sm)">Every dive is one breath: turn back up at the first <b>contractions</b>. Protected fish (parrotfish, Nassau grouper, tarpon, turtles, rays) and undersized ones cost you a fine, and a shot at the humpback costs $5,000.</p>`,
 	},
 	{
 		eyebrow: 'Getting around',
