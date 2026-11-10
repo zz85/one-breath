@@ -4,22 +4,32 @@
 //
 // Each track: levels[ 0 ] is what you start with; cost is the price of that level (0 for the first).
 export const UPGRADES = {
-	// rod and reel
-	line: { name: 'Fishing line', levels: [
-		{ cost: 0, label: '8 lb mono', lineKg: 7 },
-		{ cost: 60, label: '15 lb mono', lineKg: 13 },
-		{ cost: 180, label: '30 lb braid', lineKg: 26 },
-		{ cost: 450, label: '60 lb braid', lineKg: 50 },
+	// spearfishing: the gun (barrel length, bands, shaft speed), the shaft (its hold in a fish), a
+	// reel on the gun (lets a big fish run instead of tearing the shaft out), fins (finning speed)
+	// and freediving training (breath-hold)
+	gun: { name: 'Speargun', levels: [
+		{ cost: 0, label: '75 cm wooden gun, one 16 mm band', gunM: 0.75, bands: 1, v0: 15, shaftMass: 0.22, lineWraps: 2, gunKind: 'wood' },
+		{ cost: 160, label: '90 cm teak railgun, two 16 mm bands', gunM: 0.9, bands: 2, v0: 18, shaftMass: 0.29, lineWraps: 2, gunKind: 'teak' },
+		{ cost: 480, label: '110 cm carbon gun, two 17.5 mm bands', gunM: 1.1, bands: 2, v0: 21, shaftMass: 0.34, lineWraps: 2.5, gunKind: 'carbon' },
 	] },
-	reel: { name: 'Reel', levels: [
-		{ cost: 0, label: 'Old spinning reel', reelSpeed: 1.1 },
-		{ cost: 90, label: 'Smooth spinning reel', reelSpeed: 1.6 },
-		{ cost: 320, label: 'Conventional reel', reelSpeed: 2.2 },
+	shaft: { name: 'Shaft', levels: [
+		{ cost: 0, label: '6.25 mm shaft, single flopper', shaftHold: 1 },
+		{ cost: 90, label: '6.5 mm spring-steel shaft, double flopper', shaftHold: 1.35 },
+		{ cost: 260, label: '7 mm Tahitian shaft, slip tip', shaftHold: 1.8 },
 	] },
-	rod: { name: 'Rod', levels: [
-		{ cost: 0, label: 'Hand-me-down rod', castM: 22 },
-		{ cost: 75, label: '7 ft graphite rod', castM: 32 },
-		{ cost: 260, label: '9 ft surf rod', castM: 45 },
+	reel: { name: 'Gun reel', levels: [
+		{ cost: 0, label: 'No reel (shooting line only)', reelM: 0, reelDrag: 0 },
+		{ cost: 220, label: '30 m reel with drag', reelM: 30, reelDrag: 70 },
+	] },
+	fins: { name: 'Fins', levels: [
+		{ cost: 0, label: 'Snorkelling fins', swimMul: 1 },
+		{ cost: 110, label: 'Long-blade freediving fins', swimMul: 1.25 },
+		{ cost: 340, label: 'Carbon fins', swimMul: 1.45 },
+	] },
+	apnea: { name: 'Freediving', levels: [
+		{ cost: 0, label: 'Untrained: about 70 s breath-hold', holdS: 70 },
+		{ cost: 150, label: 'Freediving course: about 95 s', holdS: 95 },
+		{ cost: 420, label: 'Advanced course: about 125 s', holdS: 125 },
 	] },
 	// boat
 	hold: { name: 'Fish hold', levels: [
@@ -43,7 +53,7 @@ export const UPGRADES = {
 	] },
 	lights: { name: 'Boat lights', levels: [
 		{ cost: 0, label: 'Nav lights only', deckLights: false },
-		{ cost: 140, label: 'Deck floodlights for night fishing', deckLights: true },
+		{ cost: 140, label: 'Deck floodlights for night dives', deckLights: true },
 	] },
 };
 

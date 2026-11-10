@@ -88,6 +88,11 @@ export class Player {
 		this._ashoreT = 0;
 		// set by the fishing game: while a line is out the helm / step ashore prompts give way
 		this.busy = false;
+		// set by the spearfishing game: a fish on the line towing you (m/s), fins (swim speed),
+		// and frozen while blacked out (no input, your buddy has you)
+		this.tug = new THREE.Vector3();
+		this.swimMul = 1;
+		this.frozen = false;
 
 	}
 
@@ -318,8 +323,9 @@ export class Player {
 		if ( atSurface && wish.y > - 0.25 && ! inp.down( 'KeyC' ) ) wish.y = Math.max( wish.y, 0 );
 
 		const sprint = inp.down( 'ShiftLeft' ) || inp.down( 'ShiftRight' );
-		const speed = sprint ? 2.5 : 1.5;
+		const speed = ( sprint ? 2.5 : 1.5 ) * this.swimMul;
 		const k = 1 - Math.exp( - dt * 3.0 );
+		if ( this.frozen ) wish.set( 0, 0, 0 );
 		this.velocity.lerp( wish.multiplyScalar( speed ), k );
 
 		// A swimmer at the surface floats with the head riding the waves; one who dives stays where
@@ -337,6 +343,7 @@ export class Player {
 		}
 
 		p.addScaledVector( this.velocity, dt );
+		p.addScaledVector( this.tug, dt );
 		p.y = Math.min( p.y, surfaceY + 0.05 );
 		this.colliders.resolveCapsule( p, RADIUS, 1.0, 0 );
 		const g = this.groundAt( p.x, p.z, p.y + 0.3 );

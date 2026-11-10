@@ -1,7 +1,7 @@
-// Plain-node tests of the fishing game logic (no GPU): bites, the catch fight, inventory, save.
+// Plain-node tests of the game logic (no GPU): what lives where (the fish finder), inventory, save.
+// The spearfishing rules and physics: test/spear-logic.mjs; the controller: test/spear-game.mjs.
 import { FISH, FISH_IDS, fishValue, fishLengthCm } from '../src/game/FishTable.js';
 import { habitatAt, pickSpecies, rollWeight, biteDelay } from '../src/game/Bites.js';
-import { CatchMinigame } from '../src/game/CatchMinigame.js';
 import { GameState } from '../src/game/GameState.js';
 import { gearStats, defaultUpgrades, UPGRADES } from '../src/game/Gear.js';
 
@@ -70,40 +70,6 @@ for ( const id of FISH_IDS ) {
 }
 ok( fishValue( 'redSnapper', 5 ) > fishValue( 'redSnapper', 2 ), 'bigger fish is worth more' );
 
-// ---- the fight: three players
-const policies = {
-	careful: ( g ) => g.tension < 0.68 && g.surge < 0.6,
-	mash: () => true,
-	idle: () => false,
-};
-const fight = ( species, kg, policy, lineKg = 7, reelSpeed = 1.1 ) => {
-
-	const g = new CatchMinigame( { species, kg, lineKg, reelSpeed, distance: 18, rng } );
-	let st = 'fighting';
-	for ( let i = 0; i < 60 * 180 && st === 'fighting'; i ++ ) st = g.update( 1 / 60, policy( g ) );
-	return { st, t: g.time };
-
-};
-const table = {};
-for ( const [ species, kg ] of [ [ 'grunt', 0.8 ], [ 'yellowtail', 1.2 ], [ 'jack', 6 ], [ 'redSnapper', 5 ], [ 'tuna', 6 ], [ 'tuna', 13 ], [ 'tarpon', 35 ] ] ) {
-
-	for ( const p of Object.keys( policies ) ) {
-
-		const r = fight( species, kg, policies[ p ] );
-		table[ `${ species }/${ p }` ] = r;
-		console.log( `     ${ species } ${ kg } kg, ${ p }: ${ r.st } after ${ r.t.toFixed( 1 ) } s` );
-
-	}
-
-}
-ok( table[ 'grunt/careful' ].st === 'caught' && table[ 'yellowtail/careful' ].st === 'caught', 'careful reeling lands small fish' );
-ok( table[ 'jack/careful' ].st === 'caught', 'careful reeling lands a 6 kg jack on the starter line' );
-ok( table[ 'tuna/mash' ].st === 'snapped' && table[ 'tarpon/mash' ].st === 'snapped', 'holding reel on a big fish snaps the line' );
-ok( table[ 'tuna/careful' ].st !== 'caught' && fight( 'tuna', 13, policies.careful, 26, 1.6 ).st === 'caught', 'a 13 kg tuna needs the 30 lb line' );
-ok( [ 'escaped' ].includes( table[ 'grunt/idle' ].st ), 'never reeling loses the fish' );
-ok( fight( 'tarpon', 35, policies.careful ).st !== 'caught', 'a 35 kg tarpon beats the starter line' );
-ok( fight( 'tarpon', 35, policies.careful, 50, 2.2 ).st === 'caught', 'the top line and reel land it' );
-
 // ---- inventory, wallet, save round trip
 const mem = new Map();
 const storage = { getItem: ( k ) => mem.get( k ) ?? null, setItem: ( k, v ) => mem.set( k, v ) };
@@ -161,8 +127,8 @@ ok( Object.keys( defaultUpgrades() ).length === Object.keys( UPGRADES ).length &
 	const m = new Map();
 	const st = new GameState( { getItem: ( k ) => m.get( k ) ?? null, setItem: ( k, v ) => m.set( k, v ) } );
 	st.money = 100;
-	ok( st.buy( 'reel' ) && st.upgrades.reel === 1 && st.money === 10 && st.stats.reelSpeed === 1.6, 'buying the reel upgrade' );
-	ok( st.buy( 'reel' ) === null && st.upgrades.reel === 1, 'cannot buy what you cannot afford' );
+	ok( st.buy( 'shaft' ) && st.upgrades.shaft === 1 && st.money === 10 && st.stats.shaftHold === 1.35, 'buying the shaft upgrade' );
+	ok( st.buy( 'shaft' ) === null && st.upgrades.shaft === 1, 'cannot buy what you cannot afford' );
 	ok( st.fuelL === 40 && st.burn( 30 ) === 10 && st.refuelCost() === 45, 'fuel burns and costs to refill' );
 	st.money = 20;
 	ok( st.refuel() === 13 && st.money === 0 && Math.abs( st.fuelL - 23 ) < 1e-6, 'refuel stops when the money runs out' );

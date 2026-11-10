@@ -202,7 +202,18 @@ export class FishSchools {
 		this.prev = new Float32Array( n * 3 ); // positions in the previous frame (motion vectors)
 		this.tmpA = new Float32Array( n * 9 ); // boids accumulators: separation, alignment, cohesion
 		this.tmpC = new Uint16Array( n ); // neighbour counts
+		// spearfishing (game/SpearGun.js): a fish on the spear is moved by the game (pinned), a
+		// taken one is gone (not simulated or drawn) until restore(); ampMul scales the tail beat
+		// (0: a stoned fish hangs limp); wary scales every flee distance (a diver finning hard
+		// scares fish from farther away than one gliding still)
+		this.pinned = new Uint8Array( n );
+		this.gone = new Uint8Array( n );
+		this.ampMul = new Float32Array( n ).fill( 1 );
+		this.groupOf = new Uint16Array( n );
+		this.wary = 1;
+		this.curious = false; // set while a diver hangs still under water: curious fish come in
 		for ( const g of this.groups ) this.initGroup( g );
+		this.groups.forEach( ( g, gi ) => this.groupOf.fill( gi, g.offset, g.offset + g.count ) );
 
 		this.batch = new ReefBatch( 'Fish', kinds, { maxInstances: n, dynamic: true, fade: true } );
 		this.material = createSwimMaterial( this.batch );
@@ -674,6 +685,8 @@ export class FishSchools {
 		const steps = dt > 1 / 30 ? Math.min( 3, Math.ceil( dt * 30 ) ) : 1;
 		const h = dt / steps;
 		if ( dt > 0 ) for ( let k = 0; k < steps; k ++ ) for ( const g of this.groups ) if ( g.active ) this.stepGroup( g, h, threat );
+		// fish moved by someone else (a fish on the spear), after this frame's motion-vector copy
+		if ( this.onStep ) this.onStep( dt );
 
 	}
 
@@ -775,13 +788,21 @@ export class FishSchools {
 			pz = player.z;
 			const dx = g.center.x - px, dy = g.center.y - py, dz = g.center.z - pz;
 			const d2 = dx * dx + dy * dy + dz * dz;
-			const reach = sp.flee + 4;
+			const reach = ( sp.flee + 4 ) * this.wary;
 			near = d2 < ( reach + 20 + g.radius ) ** 2;
 			if ( near && g.alarm <= 0 && d2 < reach * reach && roams ) {
 
 				g.alarm = 4;
 				g.rest = 0;
 				this.retarget( g, { x: dx, z: dz } );
+
+			} else if ( this.curious && g.alarm <= 0 && ( sp.mode === 'solo' || sp.mode === 'patrol' ) && d2 < 20 * 20 && d2 > 5 * 5 && player.y < - 1 ) {
+
+				// barracuda and jacks come in to look at a diver hanging still (spearfishing: wait
+				// for them), and keep a few metres off
+				const d = Math.sqrt( d2 );
+				g.goal.set( px + dx / d * 4.5, Math.min( sp.ceiling - 0.3, py + dy * 0.3 ), pz + dz / d * 4.5 );
+				g.timer = Math.max( g.timer, 2 );
 
 			}
 
@@ -828,11 +849,12 @@ export class FishSchools {
 		}
 
 		const t = this.time;
-		const flee2 = sp.flee * sp.flee;
+		const fleeR = sp.flee * this.wary, flee2 = fleeR * fleeR;
 		const piles = g.zone.piles;
 		for ( let a = 0; a < n; a ++ ) {
 
 			const i = o + a, i3 = i * 3, ai = i * 9;
+			if ( this.pinned[ i ] || this.gone[ i ] ) continue;
 			const L = this.size[ i ];
 			let x = P[ i3 ], y = P[ i3 + 1 ], z = P[ i3 + 2 ];
 			let vx = V[ i3 ], vy = V[ i3 + 1 ], vz = V[ i3 + 2 ];
@@ -953,7 +975,7 @@ export class FishSchools {
 				if ( d2 < flee2 ) {
 
 					dl = Math.sqrt( d2 ) + 1e-4;
-					const k = 1 - dl / sp.flee;
+					const k = 1 - dl / fleeR;
 					const f = ( k * k * 12 + k * 3 ) * sp.accel;
 					ax += dx / dl * f;
 					ay += dy / dl * f * 0.4;
@@ -1183,6 +1205,7 @@ export class FishSchools {
 		for ( let a = 0; a < n; a ++ ) {
 
 			const i = o + a, i3 = i * 3, i4 = i * 4;
+			if ( this.pinned[ i ] || this.gone[ i ] ) continue;
 			const sx = S[ i4 ], sy = S[ i4 + 1 ], sz = S[ i4 + 2 ], sr = S[ i4 + 3 ];
 			// cruising: an ellipsoid 3 x longer along the heading
 			const along = sx * 2.4, side = sz * 1.1, up = sy * 0.55;
@@ -1355,6 +1378,7 @@ export class FishSchools {
 		for ( let a = 0; a < n; a ++ ) {
 
 			const i = o + a, i3 = i * 3;
+			if ( this.pinned[ i ] || this.gone[ i ] ) continue;
 			this.escortTarget( i, _v );
 			if ( S[ i * 4 + 3 ] < 0 ) {
 
@@ -1452,6 +1476,7 @@ export class FishSchools {
 			for ( let a = 0; a < g.count; a ++ ) {
 
 				const i = g.offset + a, i3 = i * 3;
+				if ( this.gone[ i ] ) continue;
 				const L = this.size[ i ];
 				const x = P[ i3 ], y = P[ i3 + 1 ], z = P[ i3 + 2 ];
 				const vx = V[ i3 ], vy = V[ i3 + 1 ], vz = V[ i3 + 2 ];
@@ -1459,7 +1484,7 @@ export class FishSchools {
 				const airborne = this.jump[ i ] > 1.5;
 
 				// heading follows the velocity (slowly when hovering), pitch limited
-				const kh = airborne ? 1 : kHead * Math.min( 1, speed / ( L * 0.5 ) + 0.15 );
+				const kh = airborne ? 1 : this.pinned[ i ] ? kHead * 2 : kHead * Math.min( 1, speed / ( L * 0.5 ) + 0.15 );
 				const ohx = H[ i3 ], ohz = H[ i3 + 2 ];
 				let hx = ohx + ( vx / speed - ohx ) * kh;
 				let hy = H[ i3 + 1 ] + ( vy / speed - H[ i3 + 1 ] ) * kh;
@@ -1484,7 +1509,7 @@ export class FishSchools {
 				const freq = rest ? 0.15 : Math.min( 10, sp.freq[ 0 ] + sp.freq[ 1 ] * bl ) * ( airborne ? 2.5 : 1 );
 				const dPhase = dt * TAU * freq;
 				this.phase[ i ] = ( this.phase[ i ] + dPhase ) % ( TAU * 64 );
-				const amp = rest ? sp.amp * 0.2 : sp.amp * ( 0.55 + 0.45 * Math.min( 2.5, bl / Math.max( 0.2, sp.cruise ) ) + this.panic[ i ] * 0.5 );
+				const amp = ( rest ? sp.amp * 0.2 : sp.amp * ( 0.55 + 0.45 * Math.min( 2.5, bl / Math.max( 0.2, sp.cruise ) ) + this.panic[ i ] * 0.5 ) ) * this.ampMul[ i ];
 
 				// cull: distance, size on screen and view frustum
 				const dx = x - cp.x, dy = y - cp.y, dz = z - cp.z;
@@ -1536,6 +1561,110 @@ export class FishSchools {
 
 		batch.commit();
 		batch.dataAttr.needsUpdate = true;
+
+	}
+
+	// ------------------------------------------------------------------ spearfishing
+
+	// the behaviour (BEHAVIOUR entry: name, model, mode...) of fish i
+	speciesOf( i ) {
+
+		return this.groups[ this.groupOf[ i ] ].sp;
+
+	}
+
+	// fn( i, sp, distance ) for each simulated fish (not gone) within r of p
+	forEachNear( p, r, fn ) {
+
+		const P = this.pos;
+		for ( const g of this.groups ) {
+
+			if ( ! g.active ) continue;
+			if ( Math.hypot( g.center.x - p.x, g.center.y - p.y, g.center.z - p.z ) > r + g.radius + 2 ) continue;
+			for ( let a = 0; a < g.count; a ++ ) {
+
+				const i = g.offset + a, i3 = i * 3;
+				if ( this.gone[ i ] ) continue;
+				const d = Math.hypot( P[ i3 ] - p.x, P[ i3 + 1 ] - p.y, P[ i3 + 2 ] - p.z );
+				if ( d <= r ) fn( i, g.sp, d );
+
+			}
+
+		}
+
+	}
+
+	// a shot, a struggling fish: every group near p bolts away from it, the closest fish in a panic
+	scare( p, radius = 8, strength = 1 ) {
+
+		const P = this.pos;
+		for ( const g of this.groups ) {
+
+			if ( ! g.active || g.sp.mode === 'escort' || g.sp.mode === 'remora' ) continue;
+			const dx = g.center.x - p.x, dz = g.center.z - p.z;
+			const d = Math.hypot( dx, g.center.y - p.y, dz );
+			if ( d > radius + g.radius ) continue;
+			g.alarm = 4 + 6 * strength;
+			g.rest = 0;
+			if ( g.sp.mode !== 'bait' ) this.retarget( g, { x: dx || 1, z: dz } );
+			else g.ball = 1;
+			for ( let a = 0; a < g.count; a ++ ) {
+
+				const i = g.offset + a, i3 = i * 3;
+				const df = Math.hypot( P[ i3 ] - p.x, P[ i3 + 1 ] - p.y, P[ i3 + 2 ] - p.z );
+				if ( df < radius ) this.panic[ i ] = Math.max( this.panic[ i ], strength * ( 1 - df / radius ) );
+
+			}
+
+		}
+
+	}
+
+	// the game moves fish i (on the spear) from now on, or hands it back to the school
+	pin( i, on = true ) {
+
+		this.pinned[ i ] = on ? 1 : 0;
+		if ( ! on ) this.ampMul[ i ] = 1;
+
+	}
+
+	// taken out of the water (on the stringer, or sunk): not simulated or drawn
+	remove( i ) {
+
+		this.pinned[ i ] = 0;
+		this.gone[ i ] = 1;
+		this.ampMul[ i ] = 1;
+
+	}
+
+	// back in the school: placed near its group (a fish that wandered in from elsewhere)
+	restore( i ) {
+
+		if ( ! this.gone[ i ] ) return;
+		const g = this.groups[ this.groupOf[ i ] ], sp = g.sp, i3 = i * 3;
+		let x = g.home.x, z = g.home.z;
+		for ( let t = 0; t < 8; t ++ ) {
+
+			const tx = g.home.x + ( g.rng() - 0.5 ) * 4, tz = g.home.z + ( g.rng() - 0.5 ) * 4;
+			if ( this.depthAt( tx, tz ) > sp.minDepth + 0.3 ) {
+
+				x = tx;
+				z = tz;
+				break;
+
+			}
+
+		}
+
+		const y = this.clampY( sp, x, z, g.home.y );
+		this.pos[ i3 ] = this.prev[ i3 ] = x;
+		this.pos[ i3 + 1 ] = this.prev[ i3 + 1 ] = y;
+		this.pos[ i3 + 2 ] = this.prev[ i3 + 2 ] = z;
+		this.vel.fill( 0, i3, i3 + 3 );
+		this.panic[ i ] = 0;
+		this.floorC[ i ] = - 1000;
+		this.gone[ i ] = 0;
+		this.pinned[ i ] = 0;
 
 	}
 

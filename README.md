@@ -1,7 +1,8 @@
 # Tidewater
 
-An island fishing game for the browser. Cast from the pier, the beach or your own boat, fight the fish,
-sell your catch to Joe at the fish stand, and spend it on better gear at Marta's chandlery. Around it is a
+An island spearfishing game for the browser (the `spearfishing` branch; `main` is the rod-and-reel
+game). Freedive the reef on one breath, hunt the fish that swim there with a speargun, sell your catch to
+Joe at the fish stand, and spend it on better gear at Marta's chandlery. Around it is a
 real-time tropical island and ocean: swim the reef, drive the boat out to deep water, and watch a humpback
 breach. It runs directly on WebGPU and WGSL with its own small rendering engine, no framework.
 
@@ -21,14 +22,27 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 
 ## Features
 
-**Fishing**
-- A spinning rod and reel that cast, reel and bend under load, with the bail, rotor and crank animated.
-- Bites that depend on the water (shallows, pier, reef, bay, deep water), depth and time of day, across
-  18 Caribbean species.
-- A line-tension fight: keep the tension in the green band, ease off when the fish runs.
+**Spearfishing**
+- A band-powered speargun at real scale (75 cm wood, 90 cm teak railgun, 110 cm carbon) with an open
+  muzzle, latex bands that you load one at a time, a stainless shaft with flopper and fins, and a mono
+  shooting line wrapped on the gun.
+- The shaft is simulated under water: quadratic drag (half its speed every ~4.5 m), a slight sink, stopped
+  dead by its line. You hunt the fish the reef simulation swims, not spawned targets.
+- Hits are tested against each fish's body shape from its anatomy (depth, width along its length), so a
+  shot through the tail fin or under the belly misses. Where it hits matters: behind the eye is a stone
+  shot, the spine paralyses, a belly or tail shot holds badly. A weak or long shot glances off the scales
+  or lodges without opening the flopper.
+- The fish on the line swims against it in surges and tires; haul it in hand over hand, ease off when it
+  runs or the shaft tears out of the flesh. A big one tows you. A gun reel lets it take line instead.
+- Breath-hold diving: oxygen partial pressure falls with depth on the way up (shallow-water blackout), CO2
+  brings the urge to breathe and contractions, hypoxia narrows your vision, and a blackout ends the dive.
+  A freediving computer shows depth, dive time and the surface interval.
+- Fish are warier of a diver finning hard; a shot or a struggling fish scatters the school.
+- Rules of the marine park: parrotfish, Nassau grouper, tarpon, turtles and rays are protected, yellowtail
+  and hogfish have a 30 cm minimum. Breaking them costs a fine.
 - A full-screen catch card with the fish's length and weight, a fish log with records, and a cooler.
-- Joe's fish stand buys your catch; Marta's chandlery sells line, reels, rods, a bigger hold, fuel, a rebuilt
-  engine, a fish finder and deck floodlights for night fishing.
+- Joe's fish stand buys your catch; Marta's chandlery sells guns, shafts, a gun reel, fins, freediving
+  courses, a bigger hold, fuel, a rebuilt engine, a fish finder and deck floodlights for night dives.
 - Walk the deck and the wheelhouse while the boat drifts; the boat burns fuel.
 - A first-play guide, contextual tips and a minimap. Progress is saved in the browser.
 
@@ -68,8 +82,8 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 
 **Audio**
 - Positional audio from real CC0 field recordings: surf timed to each breaking wave, wind, birds, the boat
-  engine, footsteps by surface, underwater ambience, whale song, and the rod and reel (casts, the bail,
-  reeling, the drag, line snaps, splashes).
+  engine, footsteps by surface, underwater ambience and whale song; the speargun's shot, hits, the bands,
+  the line and your heartbeat on a long dive are synthesised.
 
 ## Controls
 
@@ -82,9 +96,11 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 | C | Crouch / dive |
 | E | Interact: board the boat, take or leave the helm, step ashore, trade with the fish buyer or the chandlery |
 | V | Boat camera at the helm (1st / 3rd person) |
-| R | Take out / put away the fishing rod |
-| Left mouse | Hold to wind up, release to cast · strike when a fish takes the bait · hold to reel |
-| Right mouse | Reel an empty line in |
+| G | Take out / put away the speargun |
+| R | Hold to load a band (two pulls for a two-band gun) |
+| Right mouse | Hold to aim down the shaft |
+| Left mouse | Shoot (under water only) · hold to haul the line in |
+| E | Grab a fish that's in reach (also: interact) |
 | I or Tab | Cooler / fish hold and the fish log |
 | F | Free camera |
 | L | Flashlight |
@@ -94,18 +110,18 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 | P | Photo mode |
 | F1 or ? | All controls |
 
-### Fishing
+### Spearfishing
 
-Walk the deck of the boat while it drifts, or fish from the pier and the beach. Cast, wait for the bobber
-to dip and strike when it's pulled under, then play the fish: keep the line tension in the green band,
-ease off when it runs. Different water holds different fish (the shallows, the pier, the reef, the bay and
-deep water offshore), and some bite best at dawn, dusk or night. Sell your catch to Joe at the fish stand
-on the beach by the pier, and spend it at Marta's chandlery by the boathouse: stronger line, a faster reel,
-a longer rod, a bigger fish hold, a larger fuel tank, a rebuilt engine, a fish finder and deck floodlights for
-night fishing. The boat burns diesel at the helm; fill up at the chandlery. Progress is saved in the browser.
-
-The settings panel (H) exposes the sea state, time of day, sun azimuth, clouds, haze, post-processing and
-more.
+Swim out from the beach or take the boat to the reef and drop in. Press G for the gun and hold R to pull
+each band back to the shaft. Dive (C, or look down and swim), glide in slowly and hold the right mouse
+button to aim down the shaft; shoot within about three gun lengths. Hold the left mouse button to haul the
+line: a missed shaft comes back on it, a speared fish fights it. Ease off when the needle nears the red, or
+the shaft tears out. Once the fish is in reach, E grabs it and it goes in the cooler. Every dive is one
+breath: watch the urge to breathe on your dive computer, turn back at the first contractions, and breathe
+up at the surface between dives. Yellowtail school over the reef, grunts and snappers hang around the pier
+piles, jacks and barracuda patrol the drop-off. Sell your catch to Joe at the fish stand on the beach by
+the pier, and spend it at Marta's chandlery by the boathouse. The boat burns diesel at the helm; fill up at
+the chandlery. Progress is saved in the browser.
 
 ## URL options
 
@@ -135,7 +151,7 @@ Every push to `main` deploys to GitHub Pages through `.github/workflows/deploy.y
 
 | Folder | Contents |
 |---|---|
-| `src/game/` | The fishing game: rod, bites, the fight, catch card, cooler and log, vendors and stalls, guide, minimap, HUD |
+| `src/game/` | The spearfishing game: speargun, shaft and hit physics, the fish on the line, breath-hold, rules, catch card, cooler and log, vendors and stalls, guide, minimap, HUD |
 | `src/engine/` | The rendering engine: math, scene graph and geometry, GPU resources, WGSL shader composition, materials, lighting and shadows |
 | `src/ocean/` | FFT ocean, water surface and material, shore waves, breakers, swash, wake, caustics, underwater lighting |
 | `src/sky/` | Atmosphere, clouds, sky and environment |

@@ -1,7 +1,7 @@
 import { FISH, fishValue, fishLengthCm } from './FishTable.js';
 import { defaultUpgrades, gearStats, nextLevel, UPGRADES, FUEL_PRICE } from './Gear.js';
 
-const SAVE_KEY = 'tidewater.save.v1';
+const SAVE_KEY = 'tidewater.spear.v1'; // the spearfishing branch keeps its own save (different gear)
 
 // Everything the player owns: wallet, the fish in the cooler / hold, the fish log and the gear
 // levels. Saved to localStorage (per browser) after every change; storage can be missing or throw
@@ -109,6 +109,18 @@ export class GameState {
 		this.inventory = this.inventory.filter( ( f ) => f.id !== id );
 		this.save();
 		this.emit();
+
+	}
+
+	// a fine (a protected or undersized fish speared): taken from the purse, never below zero
+	fine( amount ) {
+
+		const paid = Math.min( this.money, Math.max( 0, amount ) );
+		this.money -= paid;
+		this.fines = ( this.fines || 0 ) + amount;
+		this.save();
+		this.emit();
+		return paid;
 
 	}
 

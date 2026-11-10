@@ -1,10 +1,8 @@
 import { Vector3, Color } from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
-import { FISH } from './FishTable.js';
-import { habitatAt, pickSpecies, rollWeight, biteDelay } from './Bites.js';
-import { CatchMinigame } from './CatchMinigame.js';
+import { habitatAt } from './Bites.js';
 import { GameState } from './GameState.js';
-import { FishingRod } from './FishingRod.js';
+import { Spearfishing } from './Spearfishing.js';
 import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
@@ -13,16 +11,11 @@ import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
 
-// how long the catch card stays up unless dismissed (ms)
-const CATCH_CARD_MS = 9000;
-
-// The fishing game on top of the world:
-//   R          take out / put away the rod (on foot, on the pier, on the boat's deck)
-//   hold LMB   wind up, release to cast (hold longer = farther)
-//   LMB        strike when a fish takes the bobber ("!"); then hold LMB to reel, let go to ease off
-//   RMB        reel an empty line back in
+// The spearfishing game on top of the world (the hunt itself: Spearfishing.js):
+//   G          take out / put away the speargun
+//   hold R     load a band; RMB aim; LMB shoot; hold LMB haul the line; E grab the fish
 //   I / Tab    cooler / hold contents and the fish log
-//   E          at the fish stand: sell your catch
+//   E          at the fish stand: sell your catch; at the chandlery: gear
 export class Game {
 
 	constructor( app ) {
@@ -30,11 +23,10 @@ export class Game {
 		this.app = app;
 		this.state = new GameState();
 		this.state.load();
-		this.rod = new FishingRod( { scene: app.scene, camera: app.camera, query: app.query, terrain: app.terrainData, audio: app.audio } );
-		this.rod.onLand = ( where ) => this.onBobberLanded( where );
+		this.spear = new Spearfishing( this );
 		this.stand = new FishStand( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders } );
+		// the fish on ice at Joe's stall (real fish models)
 		this.display = new CatchDisplay( { scene: app.scene, stall: this.stand.iceFish() } );
-		this.landing = null; // { species, kg } while the caught fish swings in view
 		this.chandlery = new Chandlery( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders, material: this.stand.material } );
 		this.vendors = [ this.stand.vendor, this.chandlery.vendor ];
 		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
@@ -46,11 +38,7 @@ export class Game {
 		this._sonarT = 0;
 		this._sonar = null;
 		this.hud = null;
-		this.fight = null; // CatchMinigame while a fish is on
-		this.bite = null; // { phase: 'wait' | 'nibble' | 'take', t, nibbles, species, kg }
 		this._lmb = false;
-		this._rmb = false;
-		this._hookedSpecies = null;
 		this._pier = WORLD.pier;
 		this._tmp = new Vector3();
 		this.applyGear();
@@ -61,7 +49,7 @@ export class Game {
 	applyGear() {
 
 		const g = this.state.stats;
-		this.rod.setGear( { castM: g.castM, reelSpeed: g.reelSpeed } );
+		this.spear.applyGear( g );
 		const b = this.app.boatCtl;
 		if ( b && this._engineBase ) {
 
@@ -131,17 +119,25 @@ export class Game {
 
 	}
 
+	// the gun can be out: on foot, swimming or on deck (not at the helm, the free camera, photos)
 	get canFish() {
 
 		const app = this.app, p = app.player;
-		return ! app.freeCam && ( p.mode === 'walk' || p.mode === 'deck' ) && ! ( app.ui && app.ui.ui && app.ui.ui._photo );
+		return ! app.freeCam && ( p.mode === 'walk' || p.mode === 'deck' || p.mode === 'swim' ) && ! ( app.ui && app.ui.ui && app.ui.ui._photo );
+
+	}
+
+	// the fish on the line, in the HUD's terms (the guide's tips read it too)
+	get fight() {
+
+		return this.spear.fightView;
 
 	}
 
 	// ---- per frame (after the player / camera update)
 	update( dt ) {
 
-		const app = this.app, p = app.player, inp = app.input, rod = this.rod;
+		const app = this.app, p = app.player, inp = app.input, sp = this.spear;
 		this._cardDismissed = false;
 		if ( ! this.hud && app.ui && app.ui.ui && typeof document !== 'undefined' && document.head ) {
 
@@ -155,22 +151,6 @@ export class Game {
 		}
 
 		const can = this.canFish;
-		if ( inp.hit( 'KeyR' ) && can && ! this.fight ) {
-
-			rod.equip( ! rod.equipped );
-			if ( ! rod.equipped ) this.cancelLine();
-			this.toast( rod.equipped ? 'Rod out · hold left mouse to cast' : 'Rod away', 1600 );
-
-		}
-
-		if ( ! can && rod.equipped ) {
-
-			// swimming, driving, free camera: the line comes in and the rod goes away
-			this.cancelLine( true );
-			rod.equip( false );
-
-		}
-
 		if ( this.hud && ( inp.hit( 'KeyI' ) || inp.hit( 'Tab' ) ) ) this.hud.toggleInventory();
 		if ( this.hud && inp.hit( 'Escape' ) ) {
 
@@ -180,82 +160,12 @@ export class Game {
 		}
 
 		// mouse edges (the left button also looks around while the pointer isn't captured)
-		const lmb = inp.mouseDown && inp.enabled, rmb = inp.rightDown && inp.enabled;
-		const lDown = lmb && ! this._lmb, lUp = ! lmb && this._lmb, rDown = rmb && ! this._rmb;
+		const lmb = inp.mouseDown && inp.enabled;
+		const lDown = lmb && ! this._lmb;
 		this._lmb = lmb;
-		this._rmb = rmb;
-		const panelOpen = this.hud && ( this.hud.invOpen || this.hud.standOpen );
-
-		if ( rod.equipped && ! panelOpen ) {
-
-			if ( rod.state === 'idle' && lDown ) rod.startWindup();
-			else if ( rod.state === 'windup' && lUp ) rod.release();
-			else if ( rod.state === 'floating' ) {
-
-				if ( lDown ) this.strike();
-				else if ( rDown ) {
-
-					rod.retrieve();
-					this.bite = null;
-
-				}
-
-			} else if ( rod.state === 'flying' && rDown ) rod.retrieve();
-
-		}
-
-		// bites and the fight
-		if ( rod.state === 'floating' ) this.updateBite( dt );
-		else if ( ! this.fight ) rod.dip = Math.max( 0, rod.dip - dt * 4 );
-		if ( this.fight ) this.updateFight( dt, lmb && ! panelOpen );
-
-		rod.update( dt, { visible: can, fight: this.fight } );
-		// the landed fish hangs on the end of the line, turned to face you, then goes in the cooler. With
-		// the HUD the catch card comes up once the fish has swung in, and the fish stays (slowly turning)
-		// until the card is dismissed (click, E, Esc) or times out.
-		const L = this.landing;
-		if ( L && rod.state === 'landing' && can ) {
-
-			const c = app.camera.position, m = rod.bobber;
-			let yaw = Math.atan2( c.x - m.x, c.z - m.z );
-			if ( L.card ) {
-
-				if ( ! L.shown && rod.t > 0.3 ) {
-
-					L.shown = true;
-					this.hud.showCatch( L.card, CATCH_CARD_MS );
-
-				}
-
-				if ( L.shown ) {
-
-					// a slow turn so both flanks show
-					L.cardT += dt;
-					yaw += Math.sin( L.cardT * 0.7 ) * 0.55;
-					if ( lDown || inp.hit( 'KeyE' ) || inp.hit( 'Escape' ) || L.cardT > CATCH_CARD_MS / 1000 ) {
-
-						this._cardDismissed = true; // this frame's E / click belong to the card
-						this.endLanding();
-
-					}
-
-				}
-
-			}
-
-			if ( this.landing ) {
-
-				// with the HUD the fish is shown on the full-screen catch card (studio portrait), not on
-				// the line; without it (headless) it hangs on the line for a moment
-				if ( ! L.card ) this.display.show( L.species, L.kg, m, yaw, dt );
-				else if ( this.display.shown ) this.display.hide();
-				if ( ! L.card && rod.t > 2.8 ) this.endLanding();
-
-			}
-
-		} else if ( this.landing || this.display.shown ) this.endLanding();
-
-		p.busy = rod.lineInWater || rod.state === 'windup';
+		const panelOpen = !! ( this.hud && ( this.hud.invOpen || this.hud.standOpen ) );
+		sp.update( dt, { can, lDown, lHeld: lmb, rHeld: inp.down( 'KeyR' ) && inp.enabled, panelOpen } );
+		p.busy = sp.busy;
 
 		this.updateBoat( dt );
 
@@ -264,7 +174,7 @@ export class Game {
 		this.updateVendors( inp, p );
 
 		// prompts when the player has nothing to say
-		if ( ! p.prompt && can ) p.prompt = this.prompt();
+		if ( ! p.prompt && can ) p.prompt = sp.prompt();
 
 		const aboard = p.mode === 'boat' || p.mode === 'deck';
 		// the catch card's live fish portrait (or one queued thumbnail)
@@ -273,45 +183,14 @@ export class Game {
 			fuel: aboard ? { litres: this.state.fuelL, tank: this.state.stats.fuelL } : null,
 			sonar: aboard && this.state.stats.finder ? this._sonar : null,
 			fight: this.fight,
-			casting: rod.state === 'windup',
-			power: rod.power,
-			bite: this.bite && this.bite.phase === 'take',
-			aiming: rod.equipped,
+			casting: false,
+			power: 0,
+			bite: false,
+			// the dot: where the view points, with the gun out under water
+			aiming: sp.equipped && p.mode === 'swim' && sp.phase !== 'blackout',
 		} );
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
-
-	}
-
-	prompt() {
-
-		const rod = this.rod, p = this.app.player;
-		if ( ! rod.equipped ) {
-
-			// by the water (boat deck, pier, the wet beach, wading): suggest the rod
-			const byWater = p.mode === 'deck' || ( p.mode === 'walk' && [ 'wood', 'wetsand', 'water' ].includes( p.surface ) );
-			return byWater ? { key: 'R', text: 'Take out the rod' } : null;
-
-		}
-
-		const b = this.bite;
-		switch ( rod.state ) {
-
-			case 'idle': return { key: 'LMB', text: 'Hold to wind up, release to cast   ·   R  put the rod away' };
-			case 'windup': return { key: 'LMB', text: 'Release to cast (hold longer to cast farther)' };
-			case 'flying': return null;
-			case 'floating':
-				if ( b && b.phase === 'take' ) return { key: 'LMB', text: 'Strike now!' };
-				if ( b && b.phase === 'nibble' ) return { key: '…', text: 'Something\'s nibbling · wait until the bobber is pulled under' };
-				return { key: 'RMB', text: 'Waiting for a bite · right-click to reel the line in' };
-			case 'retrieving': return { key: 'RMB', text: 'Reeling in' };
-			case 'fighting': return this.fight && this.fight.tension > this.fight.band[ 1 ]
-				? { key: 'LMB', text: 'Too much tension · let go!' }
-				: { key: 'LMB', text: 'Hold to reel · let go when the tension goes red' };
-			case 'landing': return null;
-			default: return null;
-
-		}
 
 	}
 
@@ -359,7 +238,7 @@ export class Game {
 		if ( p.mode === 'walk' ) for ( const v of this.vendors ) if ( v.inRange( p.position ) ) near = v;
 		for ( const v of this.vendors ) v.talking = !! ( hud && hud.standOpen && hud.vendor === v );
 		if ( hud && hud.standOpen && ( ! near || near !== hud.vendor ) ) hud.closeStand();
-		if ( ! near || this.fight || this._cardDismissed || ( hud && hud.catchOpen ) ) return;
+		if ( ! near || this.spear.busy || this._cardDismissed || ( hud && hud.catchOpen ) ) return;
 		if ( ! p.prompt ) p.prompt = { key: 'E', text: hud && hud.standOpen ? 'Leave' : `Talk to ${ near.name.split( ' ·' )[ 0 ] }` };
 		if ( inp.hit( 'KeyE' ) ) {
 
@@ -391,13 +270,7 @@ export class Game {
 
 	}
 
-	// ---- bites
-	habitat() {
-
-		return this.habitatAtPoint( this.rod.bobber.x, this.rod.bobber.z, this.rod.depth );
-
-	}
-
+	// ---- what lives where (the fish finder)
 	habitatAtPoint( x, z, depth ) {
 
 		const b = { x, z };
@@ -414,157 +287,6 @@ export class Game {
 	get hour() {
 
 		return this.app.settings.timeOfDay;
-
-	}
-
-	onBobberLanded( where ) {
-
-		if ( where !== 'water' ) {
-
-			this.toast( 'Landed on the sand', 1400 );
-			return;
-
-		}
-
-		this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour ) };
-
-	}
-
-	updateBite( dt ) {
-
-		const rod = this.rod;
-		const b = this.bite;
-		if ( ! b ) return;
-		b.t -= dt;
-		// bobber motion for the cues
-		if ( b.phase === 'nibble' ) rod.dip = Math.max( 0, Math.sin( Math.min( 1, ( b.pulse || 0 ) ) * Math.PI ) * 0.45 );
-		else if ( b.phase === 'take' ) rod.dip += ( 1.4 - rod.dip ) * ( 1 - Math.exp( - dt * 14 ) );
-		else rod.dip = Math.max( 0, rod.dip - dt * 3 );
-		if ( b.phase === 'nibble' ) b.pulse = ( b.pulse || 0 ) + dt * 3.2;
-
-		if ( b.t > 0 ) return;
-		if ( b.phase === 'wait' ) {
-
-			const h = this.habitat();
-			const species = pickSpecies( h, this.hour );
-			if ( ! species ) {
-
-				b.t = 8;
-				return;
-
-			}
-
-			b.species = species;
-			b.kg = rollWeight( species );
-			b.phase = 'nibble';
-			b.nibbles = 1 + Math.floor( Math.random() * 3 );
-			b.t = 0.7 + Math.random() * 0.8;
-			b.pulse = 0;
-
-		} else if ( b.phase === 'nibble' ) {
-
-			b.nibbles --;
-			b.pulse = 0;
-			if ( b.nibbles > 0 ) b.t = 0.6 + Math.random() * 1.0;
-			else {
-
-				b.phase = 'take';
-				// big, strong fish give a (slightly) shorter window
-				b.t = 2.4 - FISH[ b.species ].fight * 0.5;
-				if ( this.app.audio && this.app.audio.fishSplash ) this.app.audio.fishSplash( rod.bobber, 0.35 );
-
-			}
-
-		} else if ( b.phase === 'take' ) {
-
-			this.toast( 'It took the bait and ran', 1800 );
-			this.bite = { phase: 'wait', t: biteDelay( this.habitat(), this.hour ) };
-
-		}
-
-	}
-
-	strike() {
-
-		const b = this.bite;
-		if ( ! b || b.phase === 'wait' || b.phase === 'nibble' ) {
-
-			// too early: a nibbling fish isn't hooked yet; it keeps nibbling (a hint, no penalty)
-			if ( b && b.phase === 'nibble' ) this.toast( 'Not yet · wait for it to pull under', 1500 );
-			return;
-
-		}
-
-		const g = this.state.stats;
-		this.fight = new CatchMinigame( { species: b.species, kg: b.kg, lineKg: g.lineKg, reelSpeed: g.reelSpeed, distance: Math.max( 3, this.rod.lineOut ) } );
-		this.bite = null;
-		this.rod.hook();
-		this.toast( 'Fish on!', 1200 );
-
-	}
-
-	updateFight( dt, reeling ) {
-
-		const f = this.fight;
-		const st = f.update( dt, reeling );
-		// the fish thrashes at the surface as each run starts
-		const au = this.app.audio;
-		if ( f.surge > 0.6 && ! f._splashed && au && au.fishSplash ) au.fishSplash( this.rod.bobber, 0.3 + 0.5 * Math.min( 1, f.kg / 8 ) );
-		f._splashed = f.surge > 0.6 ? true : f.surge < 0.3 ? false : f._splashed;
-		if ( st === 'fighting' ) return;
-		this.fight = null;
-		this.rod.dip = 0;
-		const name = FISH[ f.species ].name;
-		if ( st === 'caught' ) {
-
-			const entry = this.state.addFish( f.species, f.kg, this.hour );
-			const info = this.state.lastCatch;
-			if ( au && au.fishSplash ) au.fishSplash( this.rod.bobber, 0.8 );
-			if ( au && au.fishFlop ) au.fishFlop();
-			// the catch card (with a HUD) while the fish hangs on the line; a toast otherwise
-			if ( this.hud ) this.landing = { species: f.species, kg: f.kg, card: info, cardT: 0 };
-			else {
-
-				if ( entry ) this.toast( `${ info.record ? 'New record! ' : '' }${ name } · ${ entry.kg.toFixed( 2 ) } kg · $${ entry.value }`, 3600 );
-				else this.toast( `${ name } · ${ f.kg.toFixed( 1 ) } kg · no room in the ${ this.state.upgrades.hold > 0 ? 'hold' : 'cooler' }, let it go`, 3600 );
-				this.landing = { species: f.species, kg: f.kg };
-
-			}
-
-			this.rod.land();
-
-		} else if ( st === 'snapped' ) {
-
-			this.toast( 'Snap! The line broke', 2400 );
-			if ( au && au.lineSnap ) au.lineSnap();
-			this.rod.setState( 'idle' );
-
-		} else {
-
-			this.toast( 'It threw the hook', 2000 );
-			this.rod.endFight();
-
-		}
-
-	}
-
-	// the landed fish goes in the cooler: card, fish and line away
-	endLanding() {
-
-		this.landing = null;
-		this.display.hide();
-		if ( this.hud && this.hud.catchOpen ) this.hud.hideCatch();
-		if ( this.rod.state === 'landing' ) this.rod.setState( 'idle' );
-
-	}
-
-	// line in at once (mode change)
-	cancelLine( silent = false ) {
-
-		if ( this.fight && ! silent ) this.toast( 'Lost it', 1400 );
-		this.fight = null;
-		this.bite = null;
-		if ( this.rod.state !== 'stowed' ) this.rod.setState( this.rod.equipped ? 'idle' : 'stowed' );
 
 	}
 

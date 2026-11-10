@@ -5,7 +5,7 @@ import { CHANDLERY } from './Chandlery.js';
 //  - an intro (3 cards) the first time the game starts, after the start overlay: the goal, the fishing
 //    controls, getting around and where Joe and Marta are (live direction and distance; their
 //    markers pulse on the minimap). Enter / Space / click: next, Esc: skip. Replay from the help (F1).
-//  - one-time tips the first time something happens (rod out, first nibble, fish on, first catch,
+//  - one-time tips the first time something happens (gun out, first contractions, a miss, fish on, first catch,
 //    full cooler, next to the boat, at Joe's, at Marta's), in a card above the minimap.
 // Seen state in localStorage ('tidewater.guide'), wrapped in try/catch.
 //   const guide = new Guide( ui, game, minimap );  guide.update( dt );  guide.replay()
@@ -68,21 +68,23 @@ const row = ( keys, text ) => `<div class="gm-guide-row"><span class="k">${ keys
 const CARDS = [
 	{
 		eyebrow: 'Welcome to Tidewater',
-		title: 'Fish the island, sell your catch',
-		body: `<p>Catch fish from the <b>beach</b>, the <b>pier</b> or your <b>boat</b>. Different fish bite in the shallows, around the pier, over the reef and out in deep water, and they change with the time of day.</p>
-			<p>Sell your catch to <b>Joe</b> at the fish stand by the pier, then spend the money on upgrades from <b>Marta</b> at the chandlery by the boathouse: stronger line, a faster reel, a bigger hold, a fish finder and lights for fishing at night.</p>`,
+		title: 'Freedive the reef, sell your catch',
+		body: `<p>Swim out from the <b>beach</b> or take your <b>boat</b> to the reef, dive on one breath and hunt with a <b>speargun</b>. Yellowtail school over the reef, grunts and snappers hang around the pier piles, jacks and barracuda patrol the drop-off.</p>
+			<p>Sell your catch to <b>Joe</b> at the fish stand by the pier, then spend the money on gear from <b>Marta</b> at the chandlery by the boathouse: a longer gun, a better shaft, a reel, fins, a freediving course, a bigger hold.</p>`,
 	},
 	{
-		eyebrow: 'Fishing',
-		title: 'Cast, strike, reel',
+		eyebrow: 'Spearfishing',
+		title: 'Load, aim, shoot, haul',
 		body: `<div class="gm-guide-list">
-			${ row( k( 'R' ), 'Take out the rod (by the water or on the boat)' ) }
-			${ row( k( 'Hold', 'LMB' ), 'Wind up, release to cast. Hold longer to cast farther' ) }
-			${ row( k( 'LMB' ), 'Strike when the bobber is <b>pulled under</b> (dips are only nibbles)' ) }
-			${ row( k( 'Hold', 'LMB' ), 'Reel in. <b>Let go when the tension turns red</b>, or the line snaps' ) }
-			${ row( k( 'RMB' ), 'Reel an empty line back in' ) }
-			${ row( k( 'I' ), 'Your cooler and fish log' ) }
-		</div>`,
+			${ row( k( 'G' ), 'Take out the speargun' ) }
+			${ row( k( 'Hold', 'R' ), 'Pull a band back to the shaft (two pulls for a two-band gun)' ) }
+			${ row( k( 'C' ), 'Dive (or look down and swim). <kbd>Space</kbd> back up' ) }
+			${ row( k( 'Hold', 'RMB' ), 'Aim down the shaft. Glide in slowly: fish bolt from a fast diver' ) }
+			${ row( k( 'LMB' ), 'Shoot, <b>within about three gun lengths</b>. Behind the eye is a stone shot' ) }
+			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. <b>Ease off when it runs</b>, or the shaft tears out' ) }
+			${ row( k( 'E' ), 'Grab the fish once it is in reach' ) }
+		</div>
+		<p style="margin:0;color:var(--tw-ink-3);font-size:var(--tw-fs-sm)">Every dive is one breath: turn back up at the first <b>contractions</b>. Protected fish (parrotfish, Nassau grouper, tarpon, turtles, rays) and undersized ones cost you a fine.</p>`,
 	},
 	{
 		eyebrow: 'Getting around',
@@ -101,9 +103,10 @@ const CARDS = [
 ];
 
 const TIPS = {
-	rodOut: 'Hold the <b>left mouse button</b> to wind up and release to cast. Try deeper water, around the pier or over the reef.',
-	nibble: 'The bobber is dipping: something is <b>nibbling</b>. Wait until it is <b>pulled under</b>, then click to strike.',
-	fishOn: '<b>Hold the left mouse button</b> to reel. When the tension needle nears the <b>red</b>, let go until it settles, then reel again.',
+	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly and hold the <b>right mouse button</b> to aim.',
+	contractions: 'Those are <b>contractions</b>: your body asking for air. Head up now, the oxygen runs out fastest on the way up.',
+	fishOn: '<b>Hold the left mouse button</b> to haul it in. When the needle nears the <b>red</b>, let go: the shaft is tearing out of the flesh.',
+	missed: 'Missed. <b>Hold the left mouse button</b> to haul the shaft back on its line, then reload.',
 	caught: 'Into the cooler (<kbd>I</kbd>). Sell your catch to <b>Joe</b> at the fish stand by the pier: he is on the map.',
 	full: 'Your cooler is <b>full</b>. Sell to Joe, or buy a bigger hold from Marta at the chandlery.',
 	boat: 'Your boat. <kbd>E</kbd> to board, <kbd>E</kbd> again at the wheel to drive (<kbd>W</kbd><kbd>S</kbd> throttle, <kbd>A</kbd><kbd>D</kbd> steer). Diesel is sold by Marta.',
@@ -328,13 +331,14 @@ export class Guide {
 		}
 
 		// triggers (edge detected; each tip shows once)
-		const rod = g.rod, b = g.bite, prev = this._prev;
-		if ( rod.equipped && ! prev.equipped ) this.tip( 'rodOut' );
-		if ( b && b.phase === 'nibble' ) this.tip( 'nibble' );
+		const sp = g.spear, prev = this._prev;
+		if ( sp.equipped && ! prev.equipped ) this.tip( 'gunOut' );
+		if ( sp.apnea.under && sp.apnea.contractions > 0 ) this.tip( 'contractions' );
+		if ( sp.phase === 'out' && ! sp.fight ) this.tip( 'missed' );
 		if ( g.fight && ! prev.fight ) this.tip( 'fishOn' );
 		const lc = g.state.lastCatch;
 		if ( lc && lc !== prev.lastCatch && lc.kept ) this._afterCard = 'caught';
-		if ( this._afterCard && ! ( g.hud && g.hud.catchOpen ) && ! g.landing ) {
+		if ( this._afterCard && ! ( g.hud && g.hud.catchOpen ) ) {
 
 			this.tip( this._afterCard );
 			this._afterCard = null;
@@ -351,7 +355,7 @@ export class Guide {
 
 		}
 
-		prev.equipped = rod.equipped;
+		prev.equipped = sp.equipped;
 		prev.fight = !! g.fight;
 		prev.lastCatch = lc;
 
