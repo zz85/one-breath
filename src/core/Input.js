@@ -13,6 +13,7 @@ export class Input {
 		this._mouse = [ false, false ]; // physical left / right buttons
 		this.touchButtons = [ false, false ]; // the same, held on the touch controls
 		this.vkeys = new Set(); // keys held on the touch controls
+		this.stick = { x: 0, y: 0 }; // the touch stick: x right, y forward, length 0..1
 		this.lookScale = 1; // look sensitivity (lowered while aiming down a gun)
 		this.touch = false; // set once a touch has been seen
 		this.locked = false;
@@ -97,6 +98,33 @@ export class Input {
 	tap( code ) {
 
 		this.pressed.add( code );
+
+	}
+
+	// movement: x right, y forward, length at most 1. W A S D give the full step; the touch stick an
+	// analog one (a light push walks or swims slowly)
+	move( out = { x: 0, y: 0 } ) {
+
+		let x = ( this.down( 'KeyD' ) ? 1 : 0 ) - ( this.down( 'KeyA' ) ? 1 : 0 );
+		let y = ( this.down( 'KeyW' ) ? 1 : 0 ) - ( this.down( 'KeyS' ) ? 1 : 0 );
+		if ( this.enabled ) {
+
+			x += this.stick.x;
+			y += this.stick.y;
+
+		}
+
+		const l = Math.hypot( x, y );
+		if ( l > 1 ) {
+
+			x /= l;
+			y /= l;
+
+		}
+
+		out.x = x;
+		out.y = y;
+		return out;
 
 	}
 

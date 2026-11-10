@@ -23,12 +23,23 @@ ok(await page.evaluate(() => window.__t.tc.on && window.__t.input.touch), 'the f
 for (let k = 1; k <= 6; k++) { await touch('touchMove', [[150, 250 - k * 10, 1]]); await page.waitForTimeout(16); }
 await page.waitForTimeout(80);
 let l = await L();
-ok(l.keys.includes('KeyW') && !l.keys.includes('KeyS'), `stick up: ${l.keys}`);
+ok(l.move.y > 0.9 && Math.abs(l.move.x) < 0.05, `stick up: move ${JSON.stringify(l.move)}`);
 ok(l.keys.includes('ShiftLeft'), 'pushed all the way: sprint');
 await touch('touchMove', [[200, 210, 1]]);
 await page.waitForTimeout(80);
 l = await L();
-ok(l.keys.includes('KeyW') && l.keys.includes('KeyD'), `stick up-right: ${l.keys}`);
+ok(l.move.y > 0.5 && l.move.x > 0.4, `stick up-right: move ${JSON.stringify(l.move)}`);
+// a light push: a slow, analog step
+await touch('touchMove', [[150, 225, 1]]);
+await page.waitForTimeout(80);
+l = await L();
+ok(l.move.y > 0.05 && l.move.y < 0.4 && !l.keys.includes('ShiftLeft'), `a light push moves slowly (${l.move.y.toFixed(2)})`);
+await touch('touchMove', [[150, 249, 1]]);
+await page.waitForTimeout(80);
+l = await L();
+ok(l.move.y === 0 && l.move.x === 0, 'inside the dead zone: still');
+await touch('touchMove', [[200, 210, 1]]);
+await page.waitForTimeout(40);
 
 // second finger on the right looks, while the stick is held
 await touch('touchStart', [[200, 210, 1], [600, 150, 2]]);
@@ -36,11 +47,11 @@ for (let k = 1; k <= 5; k++) { await touch('touchMove', [[200, 210, 1], [600 + k
 await page.waitForTimeout(60);
 l = await L();
 ok(l.look.x > 80 && l.look.y > 30, `drag right side looks (${l.look.x.toFixed(0)}, ${l.look.y.toFixed(0)})`);
-ok(l.keys.includes('KeyW'), 'and the stick still holds W');
+ok(l.move.y > 0.5, 'and the stick still moves you');
 await touch('touchEnd', []);
 await page.waitForTimeout(80);
 l = await L();
-ok(!l.keys.includes('KeyW') && !l.keys.includes('KeyD'), `released: no keys (${l.keys})`);
+ok(l.move.x === 0 && l.move.y === 0 && !l.keys.includes('ShiftLeft'), `released: no movement (${JSON.stringify(l.move)})`);
 // buttons shown: gun out, swimming, one band of two
 ok(['fire', 'aim', 'load', 'dive', 'up', 'gun', 'bag'].every(b => l.shown.includes(b)) && !l.shown.includes('cam'), `buttons for swimming with the gun: ${l.shown}`);
 ok(l.prompt.key === 'Hold Load' && /Fire  shoot/.test(l.prompt.text), `prompt in button words: ${l.prompt.key} | ${l.prompt.text}`);

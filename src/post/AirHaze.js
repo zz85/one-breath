@@ -173,10 +173,18 @@ export class AirHaze {
 
 		if ( ! this._passes ) this._build();
 		const p = this._passes;
+		// with the shafts off (the phone preset) the composite doesn't read them: skip the march
+		const on = this.enabled.value > 0.5 && this.shafts.value > 0;
+		if ( ! on ) {
+
+			this._histValid = false;
+			return;
+
+		}
+
 		p.march.render( { colorViews: [ this.low.texture ], clear: CLR } );
 		// accumulate: 16 jittered steps per pixel are noisy, and the final temporal resolve clamps the
 		// noisy history away, so the shafts flickered; here they settle over ~10 frames
-		const on = this.enabled.value > 0.5 && this.shafts.value > 0;
 		this.uniforms.fields.histValid.value = this._histValid && on ? 1 : 0;
 		p.temporal[ this._hc ].render( { colorViews: [ this.hist[ 1 - this._hc ].texture ], clear: CLR } );
 		this._hc = 1 - this._hc;

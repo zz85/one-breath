@@ -59,6 +59,8 @@ export class Spearfishing {
 		this._lastUnder = false;
 		this._fishHooked = false;
 		this.stats = null;
+		// practice mode (?hunt, game/Practice.js): { calm, air } fish that let you close, endless breath
+		this.practice = null;
 
 	}
 
@@ -154,6 +156,13 @@ export class Spearfishing {
 		const under = swimming && camUnder && ! app.freeCam && this.phase !== 'blackout';
 		const depth = Math.max( 0, this.waterY - app.camera.position.y );
 		this.apnea.update( dt, { under, depth, effort } );
+		if ( this.practice && this.practice.air ) {
+
+			this.apnea.o2 = 0.21;
+			this.apnea.co2 = 0;
+
+		}
+
 		if ( ! under && this._lastUnder && this.apnea.lastDive && this.apnea.lastDive.time > 25 ) this.sfx.gasp( Math.min( 1, this.apnea.lastDive.time / 60 ) );
 		this._lastUnder = under;
 		if ( this.apnea.blackout && this.phase !== 'blackout' ) this.startBlackout();
@@ -169,6 +178,7 @@ export class Spearfishing {
 		// the fish are warier of a diver finning hard than of one gliding still; at the surface the
 		// splashing scares them from farther
 		if ( this.fish ) this.fish.wary = Math.max( 0.5, Math.min( 1.7, ( camUnder ? 0.55 : 0.9 ) + 0.4 * speed + ( this.loading ? 0.25 : 0 ) ) );
+		if ( this.fish && this.practice && this.practice.calm ) this.fish.wary = 0.25;
 		if ( this.fish ) this.fish.curious = camUnder && speed < 0.35 && this.phase === 'home' && ! this.loading;
 
 		// ---- equip

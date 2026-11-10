@@ -1,5 +1,6 @@
 import * as THREE from '../engine/index.js';
 import { UI } from './UI.js';
+import { QUALITY, applyQuality } from '../core/Quality.js';
 import { G } from '../core/Globals.js';
 import { GroundBounce } from '../materials/GroundBounce.js';
 
@@ -227,6 +228,24 @@ export class AppUI {
 		live.addInfo( { label: 'CPU per frame', get: () => `${ ( app.cpuMs || 0 ).toFixed( 2 ) } ms` } );
 		live.addInfo( { label: 'Render size', get: () => `${ app.sceneRenderer.width } × ${ app.sceneRenderer.height }` } );
 		const quality = perf.addFolder( 'Quality', { icon: 'layers' } );
+		// presets (core/Quality.js): the shadow map and the ocean mesh are set at startup (?quality=)
+		s.preset = app.qualityName;
+		quality.addSelect( { label: 'Preset', object: s, key: 'preset', tooltip: 'Phone: lower resolution, cheaper ambient occlusion, no sun shafts or water reflections. The shadow map and ocean mesh change on reload (the URL gets ?quality=).', options: Object.entries( QUALITY ).map( ( [ k, q ] ) => ( { label: q.label, value: k } ) ), onChange: ( v ) => {
+
+			const Q = applyQuality( app, v );
+			s.renderScale = app.settings.renderScale;
+			s.ssr = Q.ssr;
+			if ( typeof history !== 'undefined' ) {
+
+				const u = new URL( location.href );
+				u.searchParams.set( 'quality', v );
+				history.replaceState( null, '', u );
+
+			}
+
+			quality.refresh();
+
+		} } );
 		quality.addSlider( { label: 'Render scale', object: s, key: 'renderScale', min: 0.5, max: 1, step: 0.05, format: ( v ) => `${ Math.round( v * 100 ) }%`, tooltip: 'Internal resolution; the temporal upscaler reconstructs the full output resolution.', onChange: ( v ) => app.setRenderScale( v ) } );
 		// anti-aliasing: the TAA with 2..16 jitter positions averaged per pixel, or none
 		s.aa = app.post.aaMode === 'none' ? 0 : app.post.taau.jitterPhaseOverride;
@@ -238,7 +257,7 @@ export class AppUI {
 
 		} } );
 		quality.addToggle( { label: 'Shadows', object: s, key: 'shadows', onChange: ( v ) => { app.shadows.enabled = v; } } );
-		s.ssr = true;
+		s.ssr = QUALITY[ app.qualityName ].ssr;
 		quality.addToggle( { label: 'Water reflections', object: s, key: 'ssr', tooltip: 'Screen-space reflections of the pier, boats and hills on the water.', onChange: ( v ) => { app.waterMaterial.params.ssr.value = v ? 1 : 0; } } );
 
 		this._t = 0;

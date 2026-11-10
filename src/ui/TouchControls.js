@@ -2,7 +2,7 @@
 // ?touch in the URL), and drive the same controls as the keyboard and mouse through Input's virtual
 // keys and buttons (core/Input.js), so nothing else in the game reads touch.
 //
-//   left half    a floating stick where your thumb lands: W A S D (and Shift, pushed all the way)
+//   left half    a floating analog stick where your thumb lands (Input.stick; Shift pushed all the way)
 //   right half   drag to look
 //   buttons      only the ones that do something now, read from the game each frame:
 //                Fire (tap: shoot, hold: haul the line), Aim (Q), Load (hold R), Gun (G), Dive (hold
@@ -255,12 +255,13 @@ export class TouchControls {
 
 		if ( ! this.on ) return;
 		const inp = this.input, app = this.app, g = this.game, p = app.player, sp = g.spear;
-		const m = this.move, T = 0.35;
-		inp.setVirtual( 'KeyW', m.y < - T );
-		inp.setVirtual( 'KeyS', m.y > T );
-		inp.setVirtual( 'KeyA', m.x < - T );
-		inp.setVirtual( 'KeyD', m.x > T );
-		inp.setVirtual( 'ShiftLeft', Math.hypot( m.x, m.y ) > 0.95 );
+		// the stick is analog: a dead zone at the centre, then speed grows with the push (eased, so a
+		// light push creeps); pushed all the way it sprints
+		const m = this.move, l = Math.hypot( m.x, m.y ), D = 0.15;
+		const k = l > D ? Math.pow( ( Math.min( 1, l ) - D ) / ( 1 - D ), 1.4 ) / l : 0;
+		inp.stick.x = m.x * k;
+		inp.stick.y = - m.y * k;
+		inp.setVirtual( 'ShiftLeft', l > 0.97 );
 		if ( this._moved ) {
 
 			this._moved = false;

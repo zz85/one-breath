@@ -115,7 +115,8 @@ On a phone or tablet, touch controls come up at the first touch (or add `?touch`
 left thumb down anywhere on the left side for a movement stick (push it all the way to sprint), drag on the
 right side to look, and use the buttons that appear for what you can do at the moment: Fire (tap to shoot,
 hold to haul), Aim, Load, Gun, Dive, Up, Use, Cam at the helm, and Bag. The prompts name the buttons.
-Touch screens start at a 60% render scale; change it in the Performance tab.
+The stick is analog: a light push walks or swims slowly. Touch-only devices start on the Phone quality
+preset; change it in the Performance tab, or with `?quality=high`.
 
 ### Spearfishing
 
@@ -143,6 +144,13 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noCaustics` | Skip caustics |
 | `noVeg` | Skip vegetation |
 | `noSim` | Skip the swash (shallow-water) simulation |
+| `hunt` | Practice: start under water by a school of jacks with the gun loaded, calm fish and endless breath. `hunt=barracuda` for another kind (`hunt=list` names them in the console's `__hunt('list')`), N for the next school |
+| `dist=3` | With `hunt`: how far from the school (m) |
+| `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, carbon fins), kept in your save |
+| `wild` | With `hunt`: wary fish and a real breath-hold |
+| `quality=phone` | The phone preset (lower resolution, smaller shadow map, coarser ocean mesh, no sun shafts or water reflections); `quality=high` the full one. Touch-only devices pick `phone` |
+| `touch` | Touch controls from the start |
+| `scale=0.8` | Internal render scale (0.5 to 1) |
 
 ## Running locally
 

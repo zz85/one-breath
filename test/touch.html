@@ -36,6 +36,7 @@ function frame() {
 	const l = input.consumeLook();
 	log.look.x += l.x; log.look.y += l.y;
 	log.keys = [ ...input.vkeys ].sort();
+	log.move = input.move();
 	log.fire = input.mouseDown;
 	log.prompt = player.prompt;
 	log.shown = Object.keys( tc.btn ).filter( ( k ) => tc.btn[ k ].classList.contains( 'is-shown' ) );

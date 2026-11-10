@@ -57,6 +57,7 @@ import { AirHaze } from './post/AirHaze.js';
 import { FlyCamera } from './player/FlyCamera.js';
 import { Player } from './player/Player.js';
 import { Game } from './game/Game.js';
+import { QUALITY, pickQuality, applyQuality } from './core/Quality.js';
 import { STAND } from './game/FishStand.js';
 import { CHANDLERY } from './game/Chandlery.js';
 import { BoatController } from './player/BoatController.js';
@@ -86,6 +87,9 @@ export class App {
 	async init( onProgress = () => {} ) {
 
 		const qs = this.qs;
+		// quality preset (core/Quality.js): its startup parts are read while the world is built
+		this.qualityName = pickQuality( qs );
+		const Q = QUALITY[ this.qualityName ];
 		// report a stage, then let the page paint it before the (synchronous) stage work starts
 		const progress = async ( p, text, until ) => {
 
@@ -127,7 +131,7 @@ export class App {
 		// contact-hardening filter sized by the sun's disc on the near cascade. Each cascade's depth range
 		// is its light margin (200 m) + its extent, which keeps the depth bias small in metres.
 		// Shadows come from the opaque and the late (transparent-pass) layers.
-		this.csm = this.shadows = new SunShadows( { size: 2048, splits: [ 10, 60, 400 ], lightMargin: 200, normalBias: [ 0.015, 0.06, 0.3 ], bias: 0.00002 } );
+		this.csm = this.shadows = new SunShadows( { size: Q.shadowMap, splits: [ 10, 60, 400 ], lightMargin: 200, normalBias: [ 0.015, 0.06, 0.3 ], bias: 0.00002 } );
 		this.shadows.layerMask = ( 1 << LAYERS.OPAQUE ) | ( 1 << LAYERS.TRANSPARENT );
 
 		this.environment = new Environment( renderer, scene, this.sky );
@@ -173,7 +177,7 @@ export class App {
 		this.fft = new OceanFFT( renderer );
 		if ( this.reef.setOcean ) this.reef.setOcean( this.fft ); // coral / sea fan sway follows the simulated swell
 		this.foamTexture = createFoamTexture( renderer );
-		this.oceanLOD = new CDLOD( { gridSize: Number( qs.get( 'G' ) || 32 ), leafSize: 8, levels: 12, minY: - 25, maxY: 25 } );
+		this.oceanLOD = new CDLOD( { gridSize: Number( qs.get( 'G' ) || Q.oceanGrid ), leafSize: 8, levels: 12, minY: - 25, maxY: 25 } );
 		this.surface = new WaterSurface( { fft: this.fft, cdlod: this.oceanLOD, foamTexture: this.foamTexture } );
 		this.surface.terrain = this.terrainGPU;
 		this.seaDetail = new SeaDetail();
@@ -332,11 +336,8 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		} );
 		this.post = new PostFX( renderer, { sceneRenderer: this.sceneRenderer, camera, underwater: this.underwater, clouds: this.clouds, sunDir: this.atmosphere.sunDir, haze: this.haze } );
 		G.exposure.value = this.settings.exposure;
-		if ( qs.has( 'scale' ) ) this.settings.renderScale = Number( qs.get( 'scale' ) ) || 1;
-		// phones and tablets (a touch screen and no mouse): a lower internal resolution to start with,
-		// which the temporal upscaler brings back to the screen's; the Performance tab changes it
-		else if ( typeof matchMedia !== 'undefined' && matchMedia( '(pointer: coarse)' ).matches && ! matchMedia( '(any-pointer: fine)' ).matches ) this.settings.renderScale = 0.6;
-		this.setRenderScale( this.settings.renderScale );
+		// the preset's runtime parts: render scale (?scale= wins), AO samples, sun shafts, reflections, flare
+		applyQuality( this, this.qualityName );
 
 		// ---------------------------------------------------------------- audio
 		// recorded field recordings (public/audio, credits in public/audio/CREDITS.md); ?noAudio turns it off

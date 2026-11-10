@@ -3,6 +3,7 @@ import { WORLD } from '../world/WorldLayout.js';
 import { habitatAt } from './Bites.js';
 import { GameState } from './GameState.js';
 import { Spearfishing } from './Spearfishing.js';
+import { Practice } from './Practice.js';
 import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
@@ -44,6 +45,8 @@ export class Game {
 		this._tmp = new Vector3();
 		this.applyGear();
 		this.state.onChange( () => this.applyGear() );
+		// ?hunt: straight to the fish (game/Practice.js)
+		this.practice = new Practice( this );
 
 	}
 
@@ -153,6 +156,7 @@ export class Game {
 
 		}
 
+		this.practice.update();
 		const can = this.canFish;
 		if ( this.hud && ( inp.hit( 'KeyI' ) || inp.hit( 'Tab' ) ) ) this.hud.toggleInventory();
 		if ( this.hud && inp.hit( 'Escape' ) ) {

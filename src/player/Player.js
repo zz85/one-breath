@@ -21,6 +21,7 @@ const _e = new THREE.Euler( 0, 0, 0, 'YXZ' );
 const _yAxis = new THREE.Vector3( 0, 1, 0 );
 const _qa = new THREE.Quaternion(), _qb = new THREE.Quaternion(), _qc = new THREE.Quaternion();
 const _wish = new THREE.Vector3();
+const _mv = { x: 0, y: 0 };
 // walking on the boat
 const DECK_RADIUS = 0.24;
 const DECK_STEP = 0.36; // highest ledge you step up onto
@@ -211,12 +212,9 @@ export class Player {
 		const inp = this.input;
 		_fwd.set( - Math.sin( this.yaw ), 0, - Math.cos( this.yaw ) );
 		_right.set( - _fwd.z, 0, _fwd.x );
-		const wish = new THREE.Vector3();
-		if ( inp.down( 'KeyW' ) ) wish.add( _fwd );
-		if ( inp.down( 'KeyS' ) ) wish.sub( _fwd );
-		if ( inp.down( 'KeyD' ) ) wish.add( _right );
-		if ( inp.down( 'KeyA' ) ) wish.sub( _right );
-		if ( wish.lengthSq() > 0 ) wish.normalize();
+		const m = inp.move( _mv );
+		const wish = new THREE.Vector3().addScaledVector( _fwd, m.y ).addScaledVector( _right, m.x );
+		if ( wish.lengthSq() > 1 ) wish.normalize();
 
 		const depth = this.waterH - this.position.y; // water depth at the feet
 		const wade = THREE.MathUtils.clamp( depth / 1.2, 0, 1 );
@@ -309,14 +307,11 @@ export class Player {
 		// look-relative movement (diving follows the view)
 		_fwd.set( 0, 0, - 1 ).applyEuler( _e.set( this.pitch, this.yaw, 0 ) );
 		_right.set( - Math.cos( this.yaw ), 0, Math.sin( this.yaw ) ).negate();
-		const wish = new THREE.Vector3();
-		if ( inp.down( 'KeyW' ) ) wish.add( _fwd );
-		if ( inp.down( 'KeyS' ) ) wish.sub( _fwd );
-		if ( inp.down( 'KeyD' ) ) wish.add( _right );
-		if ( inp.down( 'KeyA' ) ) wish.sub( _right );
+		const m = inp.move( _mv );
+		const wish = new THREE.Vector3().addScaledVector( _fwd, m.y ).addScaledVector( _right, m.x );
 		if ( inp.down( 'Space' ) ) wish.y += 1;
 		if ( inp.down( 'KeyC' ) || inp.down( 'ControlLeft' ) ) wish.y -= 1;
-		if ( wish.lengthSq() > 0 ) wish.normalize();
+		if ( wish.lengthSq() > 1 ) wish.normalize();
 
 		const atSurface = this.floating && p.y > surfaceY - 0.45;
 		// at the surface W along a level view keeps you on top; looking down dives
@@ -332,7 +327,7 @@ export class Player {
 		// they swim to (neutral buoyancy, nothing pulls them back up) until they swim up to the
 		// surface again.
 		const eyeTarget = surfaceY - SWIM_EYE + 0.1; // eyes ~10 cm above the water; waves still wash over
-		const diving = inp.down( 'KeyC' ) || ( inp.down( 'KeyW' ) && this.pitch < - 0.35 ) || wish.y < - 0.1;
+		const diving = inp.down( 'KeyC' ) || ( m.y > 0.3 && this.pitch < - 0.35 ) || wish.y < - 0.1;
 		if ( diving ) this.floating = false;
 		else if ( p.y > eyeTarget - 0.15 ) this.floating = true;
 		if ( this.floating ) {
@@ -387,7 +382,7 @@ export class Player {
 				if ( Math.hypot( b.center.x - p.x, b.center.z - p.z ) < 1.1 ) {
 
 					this.prompt = { key: 'Space', text: 'Climb ladder' };
-					if ( inp.down( 'Space' ) || inp.down( 'KeyW' ) ) {
+					if ( inp.down( 'Space' ) || inp.move( _mv ).y > 0.3 ) {
 
 						const top = this.colliders.groundHeightAt( b.center.x, b.center.z, 10 );
 						if ( top > p.y ) {
@@ -605,11 +600,9 @@ export class Player {
 		_fwd.set( sy, 0, cy );
 		_right.set( - cy, 0, sy );
 		_wish.set( 0, 0, 0 );
-		if ( inp.down( 'KeyW' ) ) _wish.add( _fwd );
-		if ( inp.down( 'KeyS' ) ) _wish.sub( _fwd );
-		if ( inp.down( 'KeyD' ) ) _wish.add( _right );
-		if ( inp.down( 'KeyA' ) ) _wish.sub( _right );
-		if ( _wish.lengthSq() > 0 ) _wish.normalize();
+		const m = inp.move( _mv );
+		_wish.addScaledVector( _fwd, m.y ).addScaledVector( _right, m.x );
+		if ( _wish.lengthSq() > 1 ) _wish.normalize();
 		const speed = ( inp.down( 'ShiftLeft' ) ? 2.6 : 1.6 );
 		const k = 1 - Math.exp( - 12 * dt );
 		const v = this.deckVel;
@@ -747,12 +740,10 @@ export class Player {
 
 		}
 
-		let throttle = 0;
-		if ( inp.down( 'KeyW' ) ) throttle = inp.down( 'ShiftLeft' ) ? 1 : 0.7;
-		if ( inp.down( 'KeyS' ) ) throttle = - 0.6;
-		let steer = 0;
-		if ( inp.down( 'KeyA' ) ) steer += 1;
-		if ( inp.down( 'KeyD' ) ) steer -= 1;
+		// the stick is a throttle lever and a wheel: part way is part throttle, part rudder
+		const m = inp.move( _mv );
+		const throttle = m.y > 0 ? m.y * ( inp.down( 'ShiftLeft' ) ? 1 : 0.7 ) : m.y * 0.6;
+		const steer = - m.x;
 		b.setInput( throttle, steer, dt );
 		this.prompt = { key: 'E', text: 'Leave helm   ·   V  camera' };
 

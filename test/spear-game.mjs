@@ -5,6 +5,7 @@
 import * as E from '../src/engine/index.js';
 import { Spearfishing } from '../src/game/Spearfishing.js';
 import { GameState } from '../src/game/GameState.js';
+import { Practice } from '../src/game/Practice.js';
 import { Whale } from '../src/world/marine/Whale.js';
 import { readFileSync } from 'node:fs';
 
@@ -22,6 +23,7 @@ function makeFish( list ) {
 		pos: new Float32Array( n * 3 ), vel: new Float32Array( n * 3 ), head: new Float32Array( n * 3 ), size: new Float32Array( n ),
 		panic: new Float32Array( n ), ampMul: new Float32Array( n ).fill( 1 ), pinned: new Uint8Array( n ), gone: new Uint8Array( n ),
 		sp: list.map( ( f ) => ( { name: f.name, model: f.model } ) ), wary: 1, onStep: null, scared: 0,
+		groups: list.map( ( f, i ) => ( { sp: { name: f.name }, count: 1, center: { x: f.p[ 0 ], y: f.p[ 1 ], z: f.p[ 2 ] }, offset: i } ) ),
 		speciesOf( i ) { return this.sp[ i ]; },
 		forEachNear( p, r, fn ) {
 
@@ -98,8 +100,10 @@ function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
 	if ( whale ) app.terrainData = { heightAt: () => - 40 };
 	const toasts = [];
 	const game = { app, state: new GameState( null ), hud: null, hour: 12, toast: ( t ) => toasts.push( t ) };
-	const sp = new Spearfishing( game );
+	const sp = game.spear = new Spearfishing( game );
 	sp.applyGear( game.state.stats );
+	// gear bought later applies at once, as Game.applyGear does
+	game.state.onChange( () => sp.applyGear( game.state.stats ) );
 	const W = {
 		sp, game, app, fish, keys, input, player, toasts, look: new E.Vector3( 0, 0, - 1 ),
 		// one frame: the player (stubbed: follows its tug), the camera at the eye, the game, the fish
@@ -340,6 +344,35 @@ for ( const gunLevel of [ 2, 0 ] ) {
 	ok( sp.phase === 'blackout' && t > 50, `a still diver at 8 m blacks out after ${ t.toFixed( 0 ) } s` );
 	W.run( 6 );
 	ok( sp.phase === 'home' && Math.abs( player.position.y ) < 0.1 && ! player.frozen, 'and wakes at the surface' );
+
+}
+
+// ---- ?hunt: practice mode puts you by the fish with the gun loaded, calm fish, endless air
+{
+
+	const W = makeWorld( [ { name: 'jack', model: 'jack', L: 0.5, p: [ 30, - 7, 40 ], h: [ 1, 0, 0 ] }, { name: 'grunt', model: 'grunt', L: 0.2, p: [ - 20, - 4, 10 ], h: [ 1, 0, 0 ] } ], { depth: - 1 } );
+	const { sp, game, app, player } = W;
+	player.mode = 'walk';
+	Object.assign( player, { yaw: 0, pitch: 0 } );
+	app.qs = new URLSearchParams( '?hunt&gear' );
+	game.state.money = 0;
+	const pr = new Practice( game );
+	pr.update();
+	const d = Math.hypot( player.position.x - 30, player.position.z - 40 );
+	ok( player.mode === 'swim' && Math.abs( d - 3 ) < 0.01 && Math.abs( player.position.y + 7 ) < 0.01, `?hunt: swimming 3 m from the jacks at their depth (${ d.toFixed( 2 ) } m, y ${ player.position.y.toFixed( 1 ) })` );
+	const fx = - Math.sin( player.yaw ), fz = - Math.cos( player.yaw );
+	ok( ( fx * ( 30 - player.position.x ) + fz * ( 40 - player.position.z ) ) / d > 0.99, 'facing them' );
+	ok( sp.equipped && sp.gun.bandsLoaded === sp.stats.bands && sp.stats.bands === 2, 'gun out, both bands loaded' );
+	ok( game.state.upgrades.gun === 2 && game.state.upgrades.reel === 1 && game.state.upgrades.fins === 2, '&gear: the best gun, a reel, carbon fins' );
+	W.run( 90 );
+	ok( ! sp.apnea.blackout && sp.phase !== 'blackout' && W.fish.wary === 0.25, `endless breath after 90 s, calm fish (wary ${ W.fish.wary })` );
+	ok( pr.goTo( 'grunt', 2 ).includes( 'grunt' ) && Math.hypot( player.position.x + 20, player.position.z - 10 ) < 2.01, '__hunt( grunt, 2 ) moves you to the grunts' );
+	ok( /No tuna/.test( pr.goTo( 'tuna' ) ), 'an unknown kind says so' );
+	ok( pr.goTo( 'list' ) === 'jack, grunt', 'list names the kinds' );
+	const W2 = makeWorld( [] );
+	W2.app.qs = new URLSearchParams( '' );
+	const p2 = new Practice( W2.game );
+	ok( ! p2.on && ! W2.sp.practice, 'without ?hunt nothing changes' );
 
 }
 
