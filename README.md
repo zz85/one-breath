@@ -144,7 +144,7 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noCaustics` | Skip caustics |
 | `noVeg` | Skip vegetation |
 | `noSim` | Skip the swash (shallow-water) simulation |
-| `hunt` | Practice: start under water by a school of jacks with the gun loaded, calm fish and endless breath. `hunt=barracuda` for another kind (`hunt=list` names them in the console's `__hunt('list')`), N for the next school |
+| `hunt` | Practice: start under water by a school of jacks with the gun loaded, calm fish and endless breath. `hunt=barracuda` for another kind (`hunt=list` names them), N for the next school, `__hunt('grunt')` from the console |
 | `dist=3` | With `hunt`: how far from the school (m) |
 | `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, carbon fins), kept in your save |
 | `wild` | With `hunt`: wary fish and a real breath-hold |

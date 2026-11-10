@@ -47,7 +47,13 @@ export class Practice {
 
 		const app = this.game.app, sp = this.game.spear, fish = sp.fish, p = app.player;
 		if ( ! fish ) return 'no fish in this world';
-		if ( name === 'list' ) return this.kinds().join( ', ' );
+		if ( name === 'list' ) {
+
+			const msg = this.kinds().join( ', ' );
+			this.game.toast( `Kinds: ${ msg }`, 8000 );
+			return msg;
+
+		}
 		// the whale's escort only exists while the whale swims near
 		const gs = fish.groups.filter( ( g ) => g.sp.name === name && g.count > 0 );
 		if ( ! gs.length ) {
