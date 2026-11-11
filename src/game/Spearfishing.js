@@ -9,6 +9,9 @@ const RESPAWN_S = 300; // a taken fish's place in its school is filled again aft
 const BAND_LOAD_S = 1.35; // pulling one band back to its fin under water
 const SECURE_M = 1.05; // line left when the fish is in reach
 const WHALE_HOLD_S = 0.45; // a 30 t whale on a tight line: this long before the shaft rips out
+const REACH_M = 1.3; // a hand on a fish in a hole, a gun, a float
+// fish that bolt into the reef when speared: the chance of it, where there's a coral head near
+const HOLERS = { grouper: 0.85, yellowtail: 0.4, pierSnapper: 0.4 };
 
 const _a = new Vector3(), _b = new Vector3(), _v = new Vector3(), _p = new Vector3(), _h = new Vector3(), _t = new Vector3();
 const _pull = { x: 0, y: 0, z: 0 };
@@ -19,7 +22,10 @@ const _pull = { x: 0, y: 0, z: 0 };
 //   hold RMB   aim: the gun comes up under your eye, steadier, the shaft lined up with the view
 //   LMB        shoot (only with the muzzle under water)
 //   hold LMB   haul the shooting line in hand over hand: the shaft after a miss, or the fish
-//   E          grab a fish that's in reach and dispatch it; it goes on the stringer
+//   E          grab a fish that's in reach and dispatch it; it goes on the stringer. Also: reach into
+//              the reef for a fish holed up there, take your gun back, grab the float line
+//   G          (a fish on) let go of the gun: the fish tows it, and on a float line the float, which
+//              tires it at the surface; hold LMB on the float line to pull it in from the top
 // Every dive is a breath-hold (Spear.js Apnea): the urge to breathe, contractions, tunnel vision,
 // and a blackout if you push it, most likely on the way up.
 export class Spearfishing {
@@ -40,7 +46,11 @@ export class Spearfishing {
 		};
 
 		this.hud = null;
-		this.phase = 'home'; // home | flying | out | fight | whale | blackout
+		this.phase = 'home'; // home | flying | out | fight | loose | whale | blackout
+		// let go of the gun: { gun: { p, v } (its muzzle), float: null | { p, v, lineOut, lineM, held, hauling } }
+		this.loose = null;
+		this._resume = 'home'; // the phase a blackout returns to
+		this.rng = Math.random;
 		this.whaleHit = null; // the shaft lodged in the whale: { k, tip, dir (frame k's rest space), t, reelOut, tightT }
 		this.shaftVel = new Vector3();
 		this.shaftStuck = false;
@@ -84,13 +94,46 @@ export class Spearfishing {
 
 	}
 
-	// a fight in the HUD's terms: tension 0..1 against the shaft's hold, its safe band, the fish's
-	// stamina and the line out
+	// the fish on the line, in the guide's and the HUD's terms (null while none is on)
 	get fightView() {
 
 		const f = this.fight;
-		if ( ! f || this.phase !== 'fight' ) return null;
-		return { tension: f.tension / f.holdN, band: [ 0.15, 0.75 ], stamina: f.stoned ? 0 : f.stamina, distance: f.lineOut, surge: f.surge, stoned: f.stoned };
+		if ( ! f || ( this.phase !== 'fight' && this.phase !== 'loose' && ! ( this.phase === 'blackout' && this.loose ) ) ) return null;
+		return {
+			big: f.big, quick: f.quick, stoned: f.stoned, holed: f.wedged, going: f.holeState === 'going', wedge: f.wedge,
+			tension: f.tension / f.holdN, tear: f.tear, surge: f.surge, distance: f.lineOut, loose: !! this.loose,
+		};
+
+	}
+
+	// where the diver's hand is (the gun's line clip when it's in hand)
+	hand( out ) {
+
+		if ( ! this.loose ) return out.copy( this.gun.lineClip );
+		const c = this.app.camera;
+		c.getWorldDirection( out );
+		return out.multiplyScalar( 0.45 ).add( c.position ).setY( c.position.y - 0.2 );
+
+	}
+
+	// distance from the diver's free hand (by the face) to the fish on the line: reaching into a hole
+	reachDistance() {
+
+		const F = this.fight, c = this.app.camera;
+		if ( ! F ) return Infinity;
+		c.getWorldDirection( _t ).multiplyScalar( 0.45 ).add( c.position );
+		_t.y -= 0.2;
+		return Math.hypot( F.p.x - _t.x, F.p.y - _t.y, F.p.z - _t.z );
+
+	}
+
+	// distance from the hand to the fish on the line
+	fishDistance() {
+
+		const F = this.fight;
+		if ( ! F ) return Infinity;
+		this.hand( _t );
+		return Math.hypot( F.p.x - _t.x, F.p.y - _t.y, F.p.z - _t.z );
 
 	}
 
@@ -151,7 +194,8 @@ export class Spearfishing {
 		const speed = p.velocity.length();
 		let effort = 1 + 0.32 * speed;
 		if ( this.loading ) effort += 1.1;
-		if ( this.phase === 'fight' && this.fight ) effort += 0.5 + Math.min( 1.5, this.fight.tension / 160 );
+		if ( this.phase === 'fight' && this.fight ) effort += ( this.fight.big ? 0.5 : 0.2 ) + Math.min( 1.5, this.fight.tension / 160 );
+		if ( this.loose && this.loose.float && this.loose.float.held && this.fight ) effort += Math.min( 1, ( this.fight.handTension || 0 ) / 200 );
 		if ( this.aiming && speed < 0.4 ) effort -= 0.15; // still, waiting for the fish to come in
 		const under = swimming && camUnder && ! app.freeCam && this.phase !== 'blackout';
 		const depth = Math.max( 0, this.waterY - app.camera.position.y );
@@ -169,6 +213,7 @@ export class Spearfishing {
 		if ( this.phase === 'blackout' ) {
 
 			this.updateBlackout( dt );
+			if ( this.loose ) this.updateLoose( dt, false );
 			this.updateHUD( dt, depth, under );
 			gun.update( dt, { visible: false } );
 			return;
@@ -184,16 +229,31 @@ export class Spearfishing {
 		// ---- equip
 		if ( inp.hit( 'KeyG' ) && can ) {
 
-			this.equip( ! gun.equipped );
-			this.toast( gun.equipped ? ( gun.bandsLoaded ? 'Speargun out · hold right mouse to aim' : 'Speargun out · hold R to load the bands' ) : 'Speargun away', 1800 );
+			if ( this.phase === 'fight' ) this.letGo();
+			else if ( this.loose ) this.toast( this.loose.float ? 'Your gun is out on the float line · grab the float (E)' : 'Your gun is out on the fish\'s line · swim to it and grab it (E)', 2400 );
+			else {
+
+				this.equip( ! gun.equipped );
+				this.toast( gun.equipped ? ( gun.bandsLoaded ? 'Speargun out · hold right mouse to aim' : 'Speargun out · hold R to load the bands' ) : 'Speargun away', 1800 );
+
+			}
 
 		}
 
 		if ( ! can && gun.equipped ) {
 
-			if ( this.phase === 'fight' ) this.loseFish( 'You let go of the line' );
-			if ( this.phase !== 'home' ) this.shaftHomeNow();
-			this.equip( false );
+			// at the helm, the free camera: a fish in hand goes out on the line; a float line in hand slips
+			if ( this.phase === 'fight' ) this.letGo( true );
+			if ( this.loose ) {
+
+				if ( this.loose.float ) this.loose.float.held = false;
+
+			} else {
+
+				if ( this.phase !== 'home' ) this.shaftHomeNow();
+				this.equip( false );
+
+			}
 
 		}
 
@@ -241,16 +301,18 @@ export class Spearfishing {
 		} else gun.loadT = Math.max( 0, gun.loadT - dt * 2 ); // let go half way: the band slips back
 
 		if ( act && lDown && this.phase === 'home' ) this.fire();
-		const hauling = act && lHeld && ( this.phase === 'out' || this.phase === 'fight' );
+		const holdingFloat = !! ( this.loose && this.loose.float && this.loose.float.held );
+		const hauling = act && lHeld && ( this.phase === 'out' || this.phase === 'fight' || holdingFloat );
 		gun.state = this.loading ? 'loading' : this.aiming ? 'aim' : hauling || this.phase === 'fight' ? 'haul' : 'idle';
-		if ( act && inp.hit( 'KeyE' ) && this.phase === 'fight' && this.fight.lineOut <= SECURE_M ) this.secure();
+		if ( act && inp.hit( 'KeyE' ) ) this.use();
 
 		// ---- the shaft and the fish
 		if ( this.phase === 'flying' ) this.updateFlight( dt );
 		else if ( this.phase === 'out' ) this.updateOut( dt, hauling );
 		else if ( this.phase === 'fight' ) this.updateFight( dt, hauling );
+		else if ( this.phase === 'loose' ) this.updateLoose( dt, hauling );
 		else if ( this.phase === 'whale' ) this.updateWhale( dt );
-		if ( this.phase !== 'fight' && this.phase !== 'whale' ) p.tug.set( 0, 0, 0 );
+		if ( this.phase !== 'fight' && this.phase !== 'whale' && ! ( this.phase === 'loose' && holdingFloat ) ) p.tug.set( 0, 0, 0 );
 
 		// ---- the hand: a slow wobble, steadier when aiming, shaky when hypoxic or in a contraction
 		this.contraction = Math.max( 0, this.contraction - dt * 2.5 );
@@ -284,6 +346,7 @@ export class Spearfishing {
 			apnea: this.apnea, depth, under,
 			gun: gun.equipped ? { bands: s.bands, loaded: gun.bandsLoaded, loadT: gun.loadT, shaftOut: this.phase !== 'home' } : null,
 			contraction: this.contraction,
+			cue: this.cue(),
 			blackout: this.phase === 'blackout' ? Math.min( 1, this.blackT / 1.2 ) * ( this.blackT < 3.2 ? 1 : Math.max( 0, 1 - ( this.blackT - 3.2 ) / 1.5 ) ) : 0,
 		} );
 
@@ -496,8 +559,13 @@ export class Spearfishing {
 		fish.scare( best.pos, 9, 1 );
 		this.shaftVel.set( 0, 0, 0 );
 		this.phase = 'fight';
+		this._holedTold = false;
 		const Z = ZONES[ zone ];
-		this.toast( `${ info.name } · ${ Z.label }${ through ? '' : ' (the shaft only lodged)' }`, 2600 );
+		// a grouper or a snapper over the reef may bolt into a hole in it
+		const hole = ! this.fight.stoned && this.rng() < ( HOLERS[ sp.name ] || 0 ) ? this.findHole( best.pos, gun.lineClip, this.fight.lineOut ) : null;
+		if ( hole ) this.fight.goHole( hole );
+		const how = this.fight.stoned ? '' : hole ? ' · it bolted for the reef' : this.fight.big ? ' · it\'s running' : '';
+		this.toast( `${ info.name } · ${ Z.label }${ through ? '' : ' (the shaft only lodged)' }${ how }`, 2600 );
 		this.placeShaftOnFish();
 
 	}
@@ -639,14 +707,16 @@ export class Spearfishing {
 	moveFish() {
 
 		const T = this.target, fish = this.fish, F = this.fight;
-		if ( this.phase !== 'fight' || ! T || ! F ) return;
+		if ( ! T || ! F || ! ( this.phase === 'fight' || this.loose ) ) return;
 		const i3 = T.i * 3;
 		fish.pos[ i3 ] = F.p.x; fish.pos[ i3 + 1 ] = F.p.y; fish.pos[ i3 + 2 ] = F.p.z;
 		// heading: along its swim (away from the pull) when alive; a limp fish trails along the line
 		_v.set( F.v.x, F.v.y, F.v.z );
-		if ( F.stoned || F.stamina < 0.05 || _v.lengthSq() < 0.01 ) _v.set( F.p.x - this.gun.lineClip.x, F.p.y - this.gun.lineClip.y, F.p.z - this.gun.lineClip.z ).setLength( 0.05 );
+		const A = this.loose ? this.loose.gun.p : this.gun.lineClip;
+		if ( F.wedged ) _v.set( fish.head[ i3 ], fish.head[ i3 + 1 ], fish.head[ i3 + 2 ] ).setLength( 0.02 ); // nose into the coral
+		else if ( F.stoned || F.stamina < 0.05 || _v.lengthSq() < 0.01 ) _v.set( F.p.x - A.x, F.p.y - A.y, F.p.z - A.z ).setLength( 0.05 );
 		fish.vel[ i3 ] = _v.x; fish.vel[ i3 + 1 ] = _v.y; fish.vel[ i3 + 2 ] = _v.z;
-		fish.ampMul[ T.i ] = F.stoned ? 0.04 : 0.6 + 1.6 * F.surge * ( 0.3 + 0.7 * F.stamina );
+		fish.ampMul[ T.i ] = F.stoned ? 0.04 : F.wedged ? 0.15 + 0.5 * F.wedge : 0.6 + 1.6 * F.surge * ( 0.3 + 0.7 * F.stamina );
 		fish.panic[ T.i ] = F.stoned ? 0 : Math.max( 0.4, F.stamina );
 
 	}
@@ -656,8 +726,15 @@ export class Spearfishing {
 		const F = this.fight, gun = this.gun, p = this.app.player;
 		const floor = this.floorAt( F.p.x, F.p.z );
 		F.update( dt, gun.lineClip, hauling, floor, this.waterY - 0.15, _pull );
-		// the pull on the diver: a strong fish tows you (about 90 kg of diver, gear and the water you drag)
-		p.tug.set( _pull.x, _pull.y, _pull.z ).multiplyScalar( - 1 / 220 );
+		// the pull on the diver, toward the fish: a strong one tows you (about 90 kg of diver, gear and
+		// the water you drag)
+		p.tug.set( _pull.x, _pull.y, _pull.z ).multiplyScalar( 1 / 220 );
+		if ( F.wedged && ! this._holedTold ) {
+
+			this._holedTold = true;
+			this.toast( 'It holed up in the reef. Pulling will only tear the shaft out', 3000 );
+
+		}
 		gun.lineSlack = F.tension > 15 ? 0 : 0.4;
 		if ( F.tension > F.holdN * 0.9 && Math.random() < dt * 3 ) this.sfx.twang( Math.min( 1, F.tension / F.holdN ) );
 		// the commotion draws attention: fish around keep away
@@ -691,11 +768,12 @@ export class Spearfishing {
 	}
 
 	// in reach: a hand on the gill plate, the knife behind the eye (iki), onto the stringer
-	secure() {
+	secure( worked = false ) {
 
 		const F = this.fight, T = this.target, fish = this.fish, st = this.game.state;
 		if ( ! F || ! T ) return;
-		if ( ! F.stoned && F.stamina > 0.35 && Math.random() < 0.3 + 0.5 * F.stamina ) {
+		// a small or limp fish is simply taken in hand; a big one still kicking may not let you
+		if ( ! worked && F.big && F.stamina > 0.35 && this.rng() < 0.3 + 0.5 * F.stamina ) {
 
 			// still lively: it thrashes as you reach for it
 			F.tear += 0.35 * ( T.through ? 0.6 : 1.4 );
@@ -797,6 +875,239 @@ export class Spearfishing {
 
 	}
 
+	// a coral head near p, within the line's reach of the anchor: the hole the fish bolts into
+	findHole( p, anchor, lineOut ) {
+
+		const app = this.app;
+		if ( ! app.reef || ! app.reef.floorHeightAt ) return null;
+		let best = null, bestScore = 0;
+		for ( let r = 0.6; r <= 3.01; r += 0.6 ) for ( let k = 0; k < 10; k ++ ) {
+
+			const a = k / 10 * Math.PI * 2 + r;
+			const x = p.x + Math.cos( a ) * r, z = p.z + Math.sin( a ) * r;
+			const top = app.reef.floorHeightAt( x, z ), sand = app.terrainData.heightAt( x, z );
+			const relief = top - sand;
+			if ( relief < 0.4 ) continue;
+			const y = top + 0.12;
+			if ( Math.hypot( x - anchor.x, y - anchor.y, z - anchor.z ) > lineOut - 0.3 ) continue;
+			const score = relief / ( 1 + r );
+			if ( score > bestScore ) {
+
+				bestScore = score;
+				best = { x, y, z };
+
+			}
+
+		}
+
+		return best;
+
+	}
+
+	// E: whatever is in reach (a fish in hand, a fish in its hole, the gun, the float line)
+	use() {
+
+		const F = this.fight, L = this.loose, cam = this.app.camera.position;
+		if ( F && F.wedged && this.reachDistance() <= REACH_M ) return this.reachIn();
+		if ( this.phase === 'fight' && F && this.fishDistance() <= SECURE_M + 0.15 ) return this.secure();
+		if ( ! L ) return;
+		if ( cam.distanceTo( L.gun.p ) <= REACH_M + 0.3 ) return this.takeGun();
+		if ( L.float && ! L.float.held && Math.hypot( cam.x - L.float.p.x, cam.z - L.float.p.z ) <= REACH_M + 0.5 && Math.abs( cam.y - L.float.p.y ) < 1.5 ) {
+
+			L.float.held = true;
+			this.toast( 'Float line in hand · hold Fire to pull it in, let go when it runs', 2600 );
+
+		}
+
+	}
+
+	// a hand into the hole: a fish that has calmed down comes out; one still braced doesn't (yet)
+	reachIn() {
+
+		const F = this.fight;
+		if ( F.wedge < 0.45 ) {
+
+			this.toast( 'You worked it out of the hole', 1600 );
+			this.secure( true );
+			return;
+
+		}
+
+		F.wedge = Math.max( 0, F.wedge - 0.12 );
+		this.toast( 'It\'s wedged tight. Leave it a while, go up for air, and try again', 2600 );
+
+	}
+
+	// G with a fish on: the gun goes with the fish
+	letGo( quiet = false ) {
+
+		const gun = this.gun, s = this.stats, p = this.app.player;
+		if ( this.phase !== 'fight' ) return;
+		const G = { p: gun.lineClip.clone(), v: p.velocity.clone() };
+		let float = null;
+		if ( s.floatM > 0 ) {
+
+			// the float is at the surface above where you dove; its line pays out to the gun
+			const fp = new Vector3( p.position.x, this.waterY, p.position.z );
+			float = { p: fp, v: new Vector3(), lineOut: s.floatM, lineM: s.floatM, held: false, hauling: false };
+
+		}
+
+		this.loose = { gun: G, float };
+		gun.loose = { p: G.p, dir: gun.forward.clone() };
+		gun.float = float ? { p: float.p, slack: 0 } : null;
+		this.aimLatched = false;
+		this.phase = 'loose';
+		p.tug.set( 0, 0, 0 );
+		if ( ! quiet ) this.toast( float ? 'You let go. The float will tire it: go up, breathe, grab the float (E) and pull it in from the top' : 'You let go of the gun. It\'s on the fish\'s line now: follow it and grab it (E)', 4200 );
+
+	}
+
+	// the rig out on its own: the fish (if still on) tows the gun, and the gun the float
+	updateLoose( dt, hauling ) {
+
+		const L = this.loose, gun = this.gun, F = this.fight, p = this.app.player;
+		const fl = L.float;
+		if ( fl && fl.held ) {
+
+			// the float line in hand: the float rides at your hand
+			this.hand( fl.p );
+			fl.hauling = hauling;
+
+		}
+
+		L.gun.floorY = this.floorAt( L.gun.p.x, L.gun.p.z );
+		if ( F ) {
+
+			const floor = this.floorAt( F.p.x, F.p.z );
+			F.tow( dt, L.gun, fl, floor, this.waterY - 0.15, this.waterY, _pull );
+			// floating at the surface with the line in hand: the pull drags you along, not under
+			if ( fl && fl.held ) p.tug.set( _pull.x, 0, _pull.z ).multiplyScalar( 1 / 220 );
+			this.placeShaftOnFish();
+			gun.loose.dir.set( F.p.x - L.gun.p.x, F.p.y - L.gun.p.y, F.p.z - L.gun.p.z );
+			if ( gun.loose.dir.lengthSq() < 1e-6 ) gun.loose.dir.set( 0, 0, 1 );
+			if ( F.result === 'free' ) this.freeFromLoose();
+
+		} else {
+
+			// nothing on the line: the gun sinks to the bottom (hanging under the float)
+			const g = L.gun;
+			g.v.multiplyScalar( Math.exp( - dt * 2.4 ) );
+			g.v.y -= 0.8 * dt;
+			g.p.addScaledVector( g.v, dt );
+			if ( g.p.y < L.gun.floorY + 0.1 ) {
+
+				g.p.y = L.gun.floorY + 0.1;
+				g.v.set( 0, 0, 0 );
+
+			}
+
+			if ( fl ) {
+
+				if ( fl.held && hauling ) {
+
+					const d = fl.p.distanceTo( g.p );
+					fl.lineOut = fl.lineOut > d + 0.1 ? Math.max( d, fl.lineOut - 3 * dt ) : Math.max( 0, fl.lineOut - 0.9 * dt );
+
+				}
+				_v.copy( g.p ).sub( fl.p );
+				if ( _v.length() > fl.lineOut ) g.p.copy( fl.p ).addScaledVector( _v.normalize(), fl.lineOut );
+
+			}
+
+			gun.loose.dir.set( 1, - 0.2, 0 );
+			gun.shaftDir.set( 1, 0, 0 );
+			gun.shaftPos.copy( g.p ).addScaledVector( gun.shaftDir, 0.3 );
+
+		}
+
+		gun.loose.p.copy( L.gun.p );
+		if ( fl ) {
+
+			gun.float.p.copy( fl.p );
+			gun.float.slack = Math.max( 0, fl.lineOut - fl.p.distanceTo( L.gun.p ) ) / Math.max( 1, fl.lineOut );
+			if ( fl.held && fl.lineOut <= 0.4 ) this.takeGun();
+
+		}
+
+		gun.lineSlack = F && F.tension > 15 ? 0 : 0.5;
+
+	}
+
+	// the fish tore free while the gun was out on its own
+	freeFromLoose() {
+
+		const T = this.target, fish = this.fish;
+		if ( T && fish ) {
+
+			fish.pin( T.i, false );
+			fish.panic[ T.i ] = 1;
+
+		}
+
+		this.target = null;
+		this.fight = null;
+		this.toast( 'The shaft tore out. It\'s gone', 2200 );
+
+	}
+
+	// the gun back in hand: with a fish still on, the fight goes on from here
+	takeGun() {
+
+		const gun = this.gun, F = this.fight;
+		this.loose = null;
+		gun.loose = null;
+		gun.float = null;
+		this.app.player.tug.set( 0, 0, 0 );
+		if ( F ) {
+
+			this.phase = 'fight';
+			F.lineOut = Math.min( this.lineMax, Math.max( 0.6, this.fishDistance() ) );
+			this.toast( 'Gun in hand', 1400 );
+
+		} else {
+
+			this.phase = 'out';
+			this.toast( 'Gun in hand · haul the shaft in', 1600 );
+
+		}
+
+	}
+
+	// one line about the fish on the line, for the HUD in place of a gauge: what it does and what
+	// to do (null with nothing on)
+	cue() {
+
+		const F = this.fight, L = this.loose, cam = this.app.camera.position;
+		const near = ( q ) => `${ Math.max( 0, cam.distanceTo( q ) ).toFixed( 0 ) } m`;
+		if ( L ) {
+
+			if ( L.float && L.float.held ) {
+
+				if ( F && F.handTension > 70 ) return { text: 'It\'s running · the line slips through your fingers', level: 'warn' };
+				return { text: `On the float line · ${ L.float.lineOut.toFixed( 0 ) } m out`, level: '' };
+
+			}
+
+			if ( F && F.wedged && this.reachDistance() < 6 ) return { text: F.wedge < 0.45 ? 'It\'s calmed down · reach in (E)' : 'Holed up in the reef', level: F.wedge < 0.45 ? 'good' : '' };
+			if ( L.float ) return { text: `Float ${ near( L.float.p ) } · gun ${ near( L.gun.p ) }`, level: '' };
+			return { text: `Your gun · ${ near( L.gun.p ) }`, level: 'warn' };
+
+		}
+
+		if ( ! F || this.phase !== 'fight' ) return null;
+		const t = F.tension / F.holdN;
+		if ( F.wedged ) return { text: F.wedge < 0.45 ? 'It\'s calmed down · reach in (E)' : t > 0.5 ? 'Wedged in the reef · pulling tears the shaft' : 'Holed up in the reef', level: t > 0.5 ? 'bad' : F.wedge < 0.45 ? 'good' : '' };
+		if ( F.tear > 0.25 || t > 0.85 ) return { text: 'The shaft is tearing out', level: 'bad' };
+		if ( F.holeState === 'going' ) return { text: 'It\'s bolting for the reef', level: 'warn' };
+		if ( this.fishDistance() <= SECURE_M + 0.15 ) return { text: 'In reach', level: 'good' };
+		if ( F.big && F.stamina > 0.05 ) return F.surge > 0.5 || t > 0.5 ? { text: 'Pulling hard', level: 'warn' } : { text: 'It\'s running', level: 'warn' };
+		if ( F.big ) return { text: 'It\'s tiring · haul it in', level: 'good' };
+		if ( F.stoned ) return { text: 'Stoned', level: 'good' };
+		return null;
+
+	}
+
 	shaftHomeNow() {
 
 		const gun = this.gun;
@@ -809,14 +1120,26 @@ export class Spearfishing {
 		if ( this.target && this.fish ) this.fish.pin( this.target.i, false );
 		this.target = null;
 		this.fight = null;
+		this.loose = null;
+		gun.loose = null;
+		gun.float = null;
+		this._holedTold = false;
 
 	}
 
 	// ---------------------------------------------------------------- blackout
 	startBlackout() {
 
+		// the gun drops from your hand: with a fish on, it stays out on the line (and the float)
+		if ( this.phase === 'fight' ) this.letGo( true );
+		this._resume = this.loose ? 'loose' : 'home';
+		if ( this.loose && this.loose.float ) this.loose.float.held = false;
 		this.phase = 'blackout';
 		this.blackT = 0;
+		this.loading = false;
+		this.app.player.tug.set( 0, 0, 0 );
+		this.app.player.frozen = true;
+		if ( this.loose ) return;
 		if ( this.target && this.fish ) {
 
 			this.fish.pin( this.target.i, false );
@@ -859,7 +1182,7 @@ export class Spearfishing {
 
 		if ( this.blackT > 4.7 ) {
 
-			this.phase = 'home';
+			this.phase = this._resume;
 			this._recovered = false;
 			p.frozen = false;
 
@@ -886,10 +1209,29 @@ export class Spearfishing {
 			case 'whale': return null;
 			case 'fight': {
 
-				const F = this.fight;
-				if ( F.lineOut <= SECURE_M ) return { key: 'E', text: F.stoned || F.stamina < 0.35 ? 'Grab it and dispatch it' : 'Grab it (it is still fighting)' };
-				if ( F.tension > F.holdN * 0.85 ) return { key: 'LMB', text: 'Let the line run · the shaft is tearing out!' };
-				return { key: 'Hold LMB', text: F.stoned ? 'Haul it in' : 'Haul it in · ease off when it runs' };
+				const F = this.fight, d = this.fishDistance();
+				if ( F.wedged ) {
+
+					if ( this.reachDistance() <= REACH_M ) return { key: 'E', text: F.wedge < 0.45 ? 'Reach in and work it out' : 'Reach in (it\'s wedged tight)' };
+					return { key: 'G', text: 'Let go of the gun, go up for air, come back for it   ·   pulling tears the shaft' };
+
+				}
+
+				if ( d <= SECURE_M + 0.15 ) return { key: 'E', text: ! F.big || F.stamina < 0.35 ? 'Grab it and dispatch it' : 'Grab it (it is still kicking)' };
+				if ( ! F.big ) return { key: 'Hold LMB', text: 'Haul it in' };
+				if ( F.tension > F.holdN * 0.85 ) return { key: 'LMB', text: 'Let go of the line · the shaft is tearing out!   ·   G  let go of the gun' };
+				return { key: 'Hold LMB', text: 'Haul it in, ease off when it runs   ·   G  let go of the gun' };
+
+			}
+
+			case 'loose': {
+
+				const L = this.loose, cam = this.app.camera.position, F = this.fight;
+				if ( F && F.wedged && this.reachDistance() <= REACH_M ) return { key: 'E', text: F.wedge < 0.45 ? 'Reach in and work it out' : 'Reach in (it\'s wedged tight)' };
+				if ( cam.distanceTo( L.gun.p ) <= REACH_M + 0.3 ) return { key: 'E', text: 'Take your gun' };
+				if ( L.float && L.float.held ) return { key: 'Hold LMB', text: 'Pull the float line in, let go when it runs' };
+				if ( L.float && Math.hypot( cam.x - L.float.p.x, cam.z - L.float.p.z ) <= REACH_M + 0.5 && Math.abs( cam.y - L.float.p.y ) < 1.5 ) return { key: 'E', text: 'Grab the float line' };
+				return null;
 
 			}
 

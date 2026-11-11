@@ -2,7 +2,7 @@
 //   ?hunt              next to a school of jacks, under water, facing it, the gun out and loaded
 //   ?hunt=barracuda    another kind (the world's swimmers, world/Fish.js; ?hunt=list names them)
 //   &dist=3            how far from the school (m)
-//   &gear              the best gear (a 110 cm carbon gun, the best shaft, a reel, carbon fins),
+//   &gear              the best gear (a 110 cm carbon gun, the best shaft, a reel, a float line, carbon fins),
 //                      bought with exactly the money it costs; it stays in your save
 //   &wild              the fish as wary as ever and a real breath-hold (practice makes them calm and
 //                      your breath endless otherwise)
@@ -10,7 +10,7 @@
 // the same from the console, with or without ?hunt.
 import { nextLevel } from './Gear.js';
 
-const BEST = [ 'gun', 'gun', 'shaft', 'shaft', 'reel', 'fins', 'fins' ];
+const BEST = [ 'gun', 'gun', 'shaft', 'shaft', 'reel', 'float', 'fins', 'fins' ];
 
 export class Practice {
 

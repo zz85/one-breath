@@ -277,8 +277,23 @@ export function stepShaft( p, v, dt ) {
 }
 
 // ---- the fish on the line
-//   kg, id (FishTable), zone, hold ('through' | 'lodged'), lineMax (m before the line stops it),
+// What a speared fish does depends on how it was hit and how big it is:
+//   stoned   a brain or spine shot: it hangs limp; haul it in and grab it
+//   quick    under BIG_KG: a few seconds of thrashing on the shaft, a short haul and a grab
+//   big      it runs. Hold on (it tows you, costs breath, and the shaft can tear out), let a reel
+//            pay out line, or let go of the gun (tow): on a float line the float tires it at the
+//            surface and you pull it in from the top, where you can breathe
+// A grouper or a snapper may bolt into a hole in the reef instead (goHole) and wedge itself in:
+// pulling then only tears the shaft out; left alone it calms down, and a diver who reaches in
+// can work it out by hand.
+//   kg, id (FishTable), zone, through (the flopper opened), lineMax (m before the line stops it),
 //   reel: { drag N, lineM } or null, shaftHold: multiplier of the shaft's flopper / barbs
+export const BIG_KG = 2;
+export const GUN_BODY = { mass: 2.5, drag: 6, sink: 0.8 }; // a gun dragged through the water (kg, N per m/s, m/s^2)
+export const FLOAT_BODY = { mass: 4, drag: 45 }; // a torpedo float dragged at the surface
+const HAND_PULL = 260; // N: the most a diver hauls with
+const DRAG_PAYOUT = 70; // N: a float line in hand slips through the fingers above this
+
 export class SpearFight {
 
 	constructor( { kg, id, zone, through = true, lineMax = 4, reel = null, shaftHold = 1, rng = Math.random } ) {
@@ -287,27 +302,37 @@ export class SpearFight {
 		const Z = ZONES[ zone ] || ZONES.back;
 		this.kg = kg;
 		this.zone = zone;
+		this.through = through;
 		this.rng = rng;
 		this.mass = kg * 1.6; // with the water it drags along
 		this.drag = 3.5 * Math.pow( kg, 0.67 ); // N per m/s
-		// a fish pulls with a few times its weight in bursts; reef fish less than jacks
-		this.strength = ( 6 + 30 * f.fight ) * Math.pow( kg, 0.75 ) * Z.thrust;
-		this.staminaS = f.stamina * ( zone === 'head' ? 0.6 : 1 );
-		this.stamina = 1;
 		this.stoned = !! Z.stoned;
+		this.big = ! this.stoned && kg >= BIG_KG;
+		this.quick = ! this.stoned && ! this.big;
+		// a fish pulls with a few times its weight in bursts; reef fish less than jacks. A small one on
+		// the shaft only thrashes, briefly
+		this.strength = ( 6 + 30 * f.fight ) * Math.pow( kg, 0.75 ) * Z.thrust * ( this.quick ? 0.2 : 1 );
+		this.staminaS = f.stamina * ( zone === 'head' ? 0.6 : 1 );
+		if ( this.quick ) this.staminaS = Math.min( this.staminaS, 1.5 );
+		this.stamina = 1;
 		// the shaft's hold in the flesh (N) before it starts to tear out
 		this.holdN = ( 40 + 260 * Math.min( 1, Math.pow( kg / 4, 0.5 ) ) ) * Z.hold * ( through ? 1 : 0.55 ) * shaftHold;
 		this.lineMax = lineMax;
 		this.reel = reel;
 		this.lineOut = 0; // set by start()
-		this.tension = 0; // N
+		this.tension = 0; // N, at the shaft
 		this.tear = 0; // 0..1: torn out at 1
 		this.surge = 0;
-		this._surgeT = 1 + rng() * 2;
+		this._surgeT = 0.3 + rng() * 0.8; // the first run comes at once
 		this._wander = rng() * 6.28;
-		this.result = null; // 'free' (torn out), 'secured'
+		this.result = null; // 'free' (torn out)
 		this.p = { x: 0, y: 0, z: 0 };
 		this.v = { x: 0, y: 0, z: 0 };
+		this.thrust = { x: 0, y: 0, z: 0 };
+		// holing up: null, 'going' (swimming for the hole) or 'wedged'; wedge 1 tight .. 0 calmed down
+		this.hole = null;
+		this.holeState = null;
+		this.wedge = 0;
 
 	}
 
@@ -326,16 +351,38 @@ export class SpearFight {
 
 	}
 
-	// anchor: the gun's muzzle; hauling: hand over hand on the line; floorY: the bottom under the
-	// fish (it can't go into it); ceilY: the surface. Returns the pull on the diver ({x,y,z}, N).
-	update( dt, anchor, hauling, floorY = - 1e9, ceilY = 0, out = { x: 0, y: 0, z: 0 } ) {
+	// it bolts for a hole in the reef at pt ({x,y,z}) and wedges itself in
+	goHole( pt ) {
 
-		const p = this.p, v = this.v;
-		let dx = p.x - anchor.x, dy = p.y - anchor.y, dz = p.z - anchor.z;
-		let d = Math.hypot( dx, dy, dz ) || 1e-4;
-		const nx = dx / d, ny = dy / d, nz = dz / d;
-		// thrust: runs away from the diver in surges, weaving side to side, tiring
-		let fx = 0, fy = 0, fz = 0;
+		this.hole = { x: pt.x, y: pt.y, z: pt.z };
+		this.holeState = 'going';
+		this.wedge = 1;
+		this._goingT = 0;
+
+	}
+
+	get wedged() {
+
+		return this.holeState === 'wedged';
+
+	}
+
+	// its own swimming for one step: away from `from` in surges (or for its hole), tiring
+	_swim( dt, from, floorY, ceilY ) {
+
+		const p = this.p, v = this.v, f = this.thrust;
+		if ( this.wedged ) {
+
+			v.x = v.y = v.z = 0;
+			f.x = f.y = f.z = 0;
+			return f;
+
+		}
+
+		let dx = p.x - from.x, dy = p.y - from.y, dz = p.z - from.z;
+		const d = Math.hypot( dx, dy, dz ) || 1e-4;
+		let nx = dx / d, ny = dy / d, nz = dz / d;
+		f.x = f.y = f.z = 0;
 		if ( ! this.stoned && this.stamina > 0 ) {
 
 			this._surgeT -= dt;
@@ -348,29 +395,105 @@ export class SpearFight {
 
 			this.surge = Math.max( 0, this.surge - dt * 0.7 );
 			this._wander += dt * ( 1.5 + this.surge * 3 );
+			let w = Math.sin( this._wander ) * 0.8, down = 0.15, k = 1;
+			if ( this.holeState === 'going' ) {
+
+				// straight for the hole, hard
+				const h = this.hole;
+				const hx = h.x - p.x, hy = h.y - p.y, hz = h.z - p.z, hl = Math.hypot( hx, hy, hz ) || 1e-4;
+				nx = hx / hl; ny = hy / hl; nz = hz / hl;
+				w = 0; down = 0; k = 1.4;
+				this.surge = Math.max( this.surge, 0.7 );
+
+			}
+
 			const sx = - nz, sz = nx; // sideways
-			const w = Math.sin( this._wander ) * 0.8;
-			const T = this.strength * ( 0.25 + 0.75 * this.stamina ) * ( 0.45 + 0.9 * this.surge );
-			fx = ( nx + sx * w ) * T;
-			fy = ( ny * 0.5 - 0.15 ) * T; // fish sound downward, toward cover
-			fz = ( nz + sz * w ) * T;
+			const T = k * this.strength * ( 0.25 + 0.75 * this.stamina ) * ( 0.45 + 0.9 * this.surge );
+			f.x = ( nx + sx * w ) * T;
+			f.y = ( ( this.holeState === 'going' ? ny : ny * 0.5 ) - down ) * T; // fish sound downward, toward cover
+			f.z = ( nz + sz * w ) * T;
 			this.stamina = Math.max( 0, this.stamina - dt * ( 0.4 + this.surge ) / this.staminaS );
 
-		} else {
+		} else f.y = - this.kg * 0.4; // a dead fish sinks slowly
 
-			fy = - this.kg * 0.4; // a dead fish sinks slowly
-
-		}
-
-		// water drag, then the step
-		fx -= v.x * this.drag; fy -= v.y * this.drag; fz -= v.z * this.drag;
-		v.x += fx / this.mass * dt; v.y += fy / this.mass * dt; v.z += fz / this.mass * dt;
+		const ax = f.x - v.x * this.drag, ay = f.y - v.y * this.drag, az = f.z - v.z * this.drag;
+		v.x += ax / this.mass * dt; v.y += ay / this.mass * dt; v.z += az / this.mass * dt;
 		p.x += v.x * dt; p.y += v.y * dt; p.z += v.z * dt;
 		if ( p.y < floorY + 0.15 ) { p.y = floorY + 0.15; v.y = Math.max( 0, v.y ); }
 		if ( p.y > ceilY - 0.1 ) { p.y = ceilY - 0.1; v.y = Math.min( 0, v.y ); }
+		// into its hole: there, or wherever the line or its strength stopped it (a crack nearer by)
+		if ( this.holeState === 'going' ) {
 
-		// the line: hauling shortens it (as fast as hands go while the fish isn't pulling hard)
-		const haul = hauling ? Math.max( 0, 0.85 - this.tension / 400 ) : 0;
+			const h = this.hole;
+			this._goingT += dt;
+			if ( Math.hypot( h.x - p.x, h.y - p.y, h.z - p.z ) < 0.3 || this.stamina <= 0 || this._goingT > 3 ) {
+
+				this.holeState = 'wedged';
+				h.x = p.x; h.y = p.y; h.z = p.z;
+				v.x = v.y = v.z = 0;
+
+			}
+
+		}
+
+		return f;
+
+	}
+
+	_tear( dt ) {
+
+		if ( this.tension > this.holdN ) this.tear += dt * ( this.tension / this.holdN - 1 ) * 2.5;
+		else this.tear = Math.max( 0, this.tear - dt * 0.05 );
+		if ( this.tear >= 1 ) this.result = 'free';
+
+	}
+
+	// wedged in its hole: it doesn't move; a pull on the line only loads the shaft. Left alone, it
+	// calms down; pulled, it braces again
+	_wedgedLine( dt, T ) {
+
+		this.tension += ( T - this.tension ) * ( 1 - Math.exp( - dt * 10 ) );
+		if ( this.tension < 25 ) {
+
+			this.wedge = Math.max( 0, this.wedge - dt / 18 );
+			this.stamina = Math.max( 0, this.stamina - dt / 40 );
+
+		} else if ( this.tension > 60 ) this.wedge = Math.min( 1, this.wedge + dt * 0.15 );
+		this._tear( dt );
+
+	}
+
+	// The gun in the diver's hand. anchor: the muzzle; hauling: hand over hand on the line; floorY:
+	// the bottom under the fish; ceilY: the surface. Returns the pull on the diver, toward the fish
+	// ({x,y,z}, N).
+	update( dt, anchor, hauling, floorY = - 1e9, ceilY = 0, out = { x: 0, y: 0, z: 0 } ) {
+
+		const p = this.p, v = this.v;
+		const f = this._swim( dt, anchor, floorY, ceilY );
+		let dx = p.x - anchor.x, dy = p.y - anchor.y, dz = p.z - anchor.z;
+		let d = Math.hypot( dx, dy, dz ) || 1e-4;
+		// slack line is taken in as the diver closes the distance
+		if ( d < this.lineOut ) this.lineOut = Math.max( d, this.lineOut - dt * 1.5 );
+		if ( this.wedged ) {
+
+			// it won't come: hauling only stretches the line against the reef
+			if ( hauling ) this.lineOut = Math.max( d - 0.6, this.lineOut - 0.4 * dt );
+			let T = 0;
+			if ( d > this.lineOut ) {
+
+				T = Math.min( HAND_PULL, ( d - this.lineOut ) * 400 );
+				out.x = dx / d * T; out.y = dy / d * T; out.z = dz / d * T;
+
+			} else { out.x = 0; out.y = 0; out.z = 0; }
+
+			this._wedgedLine( dt, T );
+			return out;
+
+		}
+
+		// hauling shortens the line: briskly for a small or limp fish, as fast as hands go while a
+		// big one isn't pulling hard
+		const haul = ! hauling ? 0 : this.big && this.stamina > 0 ? Math.max( 0, 0.85 - this.tension / 400 ) : 1.3;
 		this.lineOut = Math.max( 0.5, this.lineOut - haul * dt );
 		dx = p.x - anchor.x; dy = p.y - anchor.y; dz = p.z - anchor.z;
 		d = Math.hypot( dx, dy, dz ) || 1e-4;
@@ -380,7 +503,7 @@ export class SpearFight {
 			// taut: the line holds the fish at its length; the tension is the force it takes
 			const ex = dx / d, ey = dy / d, ez = dz / d;
 			const vOut = v.x * ex + v.y * ey + v.z * ez;
-			const pull = Math.max( 0, fx * ex + fy * ey + fz * ez );
+			const pull = Math.max( 0, f.x * ex + f.y * ey + f.z * ez );
 			T = pull + Math.max( 0, vOut ) * this.mass / Math.max( dt, 1e-3 ) * 0.5 + ( d - this.lineOut ) * 400;
 			// a reel pays line out under its drag instead of holding hard
 			if ( this.reel && T > this.reel.drag && this.lineOut < this.reel.lineM ) {
@@ -398,13 +521,115 @@ export class SpearFight {
 		} else { out.x = 0; out.y = 0; out.z = 0; }
 
 		this.tension += ( T - this.tension ) * ( 1 - Math.exp( - dt * 10 ) );
-		// tearing out: the hold gives where the tension is past it, a little more each time
-		if ( this.tension > this.holdN ) this.tear += dt * ( this.tension / this.holdN - 1 ) * 2.5;
-		else this.tear = Math.max( 0, this.tear - dt * 0.05 );
-		if ( this.tear >= 1 ) this.result = 'free';
+		this._tear( dt );
 		return out;
 
 	}
+
+	// The diver let go of the gun: the fish tows it (and the float, on a float line) on its own.
+	//   gun: { p, v } (its muzzle, where the shooting line is clipped)
+	//   float: null, or { p, v, lineOut, lineM, held, hauling }: the float line from the gun's butt
+	//     to the float; held: the diver has the line in hand at p (it doesn't move), and hauling
+	//     pulls it in; it slips through the fingers when the fish pulls hard
+	// Returns the pull at the diver's hand while held ({x,y,z} toward the gun, N), else zero.
+	tow( dt, gun, float, floorY = - 1e9, ceilY = 0, waterY = 0, out = { x: 0, y: 0, z: 0 } ) {
+
+		const p = this.p, v = this.v;
+		this._swim( dt, gun.p, floorY, ceilY );
+		// the gun: drag, a slow sink, the bottom
+		const G = GUN_BODY;
+		const kg = Math.exp( - G.drag / G.mass * dt );
+		gun.v.x *= kg; gun.v.y = gun.v.y * kg - G.sink * dt; gun.v.z *= kg;
+		gun.p.x += gun.v.x * dt; gun.p.y += gun.v.y * dt; gun.p.z += gun.v.z * dt;
+		const gFloor = gun.floorY ?? floorY;
+		if ( gun.p.y < gFloor + 0.1 ) { gun.p.y = gFloor + 0.1; gun.v.y = Math.max( 0, gun.v.y ); gun.v.x *= 0.9; gun.v.z *= 0.9; }
+		if ( float ) {
+
+			if ( float.held ) {
+
+				float.v.x = float.v.y = float.v.z = 0;
+				if ( float.hauling ) {
+
+					// slack comes in as fast as hands go; a loaded line slowly
+					const d = Math.hypot( gun.p.x - float.p.x, gun.p.y - float.p.y, gun.p.z - float.p.z );
+					float.lineOut = float.lineOut > d + 0.1 ? Math.max( d, float.lineOut - 3 * dt ) : Math.max( 0, float.lineOut - 0.9 * dt );
+
+				}
+
+			} else {
+
+				const kf = Math.exp( - FLOAT_BODY.drag / FLOAT_BODY.mass * dt );
+				float.v.x *= kf; float.v.z *= kf; float.v.y = 0;
+				float.p.x += float.v.x * dt; float.p.z += float.v.z * dt;
+				float.p.y = waterY;
+
+			}
+
+		}
+
+		// the lines: fish to gun (the shooting line), gun to float; inverse masses (a wedged fish and
+		// a float in hand don't give)
+		const fish = { p, v, inv: this.wedged ? 0 : 1 / this.mass };
+		const gb = { p: gun.p, v: gun.v, inv: 1 / G.mass };
+		const fb = float && { p: float.p, v: float.v, inv: float.held ? 0 : 1 / FLOAT_BODY.mass, keepY: ! float.held };
+		let Tshaft = 0, Thand = 0;
+		for ( let it = 0; it < 3; it ++ ) {
+
+			Tshaft = Math.max( Tshaft, link( fish, gb, this.lineOut, dt ) );
+			if ( fb ) Thand = Math.max( Thand, link( gb, fb, float.lineOut, dt ) );
+
+		}
+
+		if ( fb && float.held && Thand > DRAG_PAYOUT ) float.lineOut = Math.min( float.lineM, float.lineOut + ( Thand - DRAG_PAYOUT ) / 120 * dt );
+		if ( fb && float.held ) {
+
+			const dx = gun.p.x - float.p.x, dy = gun.p.y - float.p.y, dz = gun.p.z - float.p.z, d = Math.hypot( dx, dy, dz ) || 1e-4;
+			const T = d >= float.lineOut - 0.02 ? Math.min( Thand, 400 ) : 0;
+			out.x = dx / d * T; out.y = dy / d * T; out.z = dz / d * T;
+
+		} else { out.x = 0; out.y = 0; out.z = 0; }
+
+		if ( this.wedged ) this._wedgedLine( dt, Tshaft );
+		else {
+
+			this.tension += ( Tshaft - this.tension ) * ( 1 - Math.exp( - dt * 10 ) );
+			this._tear( dt );
+
+		}
+
+		this.handTension = Thand;
+		return out;
+
+	}
+
+}
+
+// a line of length L between two bodies { p, v, inv (1 / mass), keepY }: if it is stretched, both
+// move back along it in proportion to their inverse masses and lose the speed that parts them.
+// Returns the tension it took (N).
+function link( a, b, L, dt ) {
+
+	const dx = a.p.x - b.p.x, dy = a.p.y - b.p.y, dz = a.p.z - b.p.z;
+	const d = Math.hypot( dx, dy, dz );
+	const w = a.inv + b.inv;
+	if ( d <= L || d < 1e-6 || w <= 0 ) return 0;
+	const nx = dx / d, ny = dy / d, nz = dz / d, e = d - L;
+	const wa = a.inv / w, wb = b.inv / w;
+	a.p.x -= nx * e * wa; a.p.y -= ny * e * wa; a.p.z -= nz * e * wa;
+	b.p.x += nx * e * wb; b.p.z += nz * e * wb;
+	if ( ! b.keepY ) b.p.y += ny * e * wb;
+	const vrel = ( a.v.x - b.v.x ) * nx + ( a.v.y - b.v.y ) * ny + ( a.v.z - b.v.z ) * nz;
+	let J = 0;
+	if ( vrel > 0 ) {
+
+		J = vrel / w; // the impulse that stops them parting (N s)
+		a.v.x -= nx * J * a.inv; a.v.y -= ny * J * a.inv; a.v.z -= nz * J * a.inv;
+		b.v.x += nx * J * b.inv; b.v.z += nz * J * b.inv;
+		if ( ! b.keepY ) b.v.y += ny * J * b.inv;
+
+	}
+
+	return J / Math.max( dt, 1e-3 ) + e * 300;
 
 }
 

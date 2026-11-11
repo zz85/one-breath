@@ -83,7 +83,7 @@ function makeWhale() {
 
 }
 
-function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
+function makeWorld( fishList, { depth = 6, whale = null, reefAt = null } = {} ) {
 
 	const scene = new E.Scene();
 	const camera = new E.PerspectiveCamera( 60, 1.7, 0.05, 1000 );
@@ -94,7 +94,7 @@ function makeWorld( fishList, { depth = 6, whale = null } = {} ) {
 	const app = {
 		scene, camera, input, player, freeCam: false, audio: null,
 		terrainData: { heightAt: () => - 12 },
-		reef: { fish, floorHeightAt: () => whale ? - 40 : - 12 },
+		reef: { fish, floorHeightAt: reefAt || ( () => whale ? - 40 : - 12 ) },
 		whale,
 	};
 	if ( whale ) app.terrainData = { heightAt: () => - 40 };
@@ -376,6 +376,185 @@ for ( const gunLevel of [ 2, 0 ] ) {
 	W2.app.qs = new URLSearchParams( '' );
 	const p2 = new Practice( W2.game );
 	ok( ! p2.on && ! W2.sp.practice, 'without ?hunt nothing changes' );
+
+}
+
+// ---- after the shot: what a speared fish does (small ones barely fight, big ones run, some hole up)
+
+// shoot fish 0 of a world from where the diver is, aimed at its middle (a body shot), the gun loaded
+function shootAt( W, { upgrades = {} } = {} ) {
+
+	const { sp, input, fish, game } = W;
+	Object.assign( game.state.upgrades, upgrades );
+	sp.applyGear( game.state.stats );
+	input._hit.add( 'KeyG' );
+	W.frame();
+	sp.gun.bandsLoaded = sp.stats.bands;
+	input._hit.add( 'KeyQ' );
+	W.frame();
+	W.run( 0.6 );
+	const g = sp.gun, at = g.muzzle.clone().addScaledVector( g.forward, 1.8 );
+	fish.pos.set( [ at.x, at.y - 0.012, at.z ], 0 );
+	// no hand wobble or random spread on the shot: these tests are about what comes after
+	const rnd = Math.random;
+	Math.random = () => 0.5;
+	W.frame( 1 / 60, { lmb: true } );
+	W.run( 0.3 );
+	Math.random = rnd;
+	return sp.phase;
+
+}
+
+// a small grunt: a short haul and a grab, no fight
+{
+
+	const W = makeWorld( [ { name: 'grunt', model: 'grunt', L: 0.28, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	const { sp, input, game } = W;
+	ok( shootAt( W ) === 'fight' && sp.fight.quick && ! sp.fight.big, `a ${ sp.fight && sp.fight.kg.toFixed( 2 ) } kg grunt: a quick one, no run` );
+	let t = 0, maxPull = 0;
+	for ( ; t < 6 && sp.fishDistance() > 1.15; t += 1 / 60 ) {
+
+		W.frame( 1 / 60, { lmb: true } );
+		maxPull = Math.max( maxPull, sp.fight.tension );
+
+	}
+
+	ok( t < 2.5 && maxPull < sp.fight.holdN * 0.3, `hauled to hand in ${ t.toFixed( 1 ) } s, never near tearing (${ maxPull.toFixed( 0 ) } of ${ sp.fight.holdN.toFixed( 0 ) } N)` );
+	ok( sp.cue() && sp.cue().text === 'In reach', `the cue: "${ sp.cue() && sp.cue().text }"` );
+	input._hit.add( 'KeyE' );
+	W.frame();
+	ok( sp.phase === 'home' && game.state.inventory.length === 1, 'E takes it at the first try' );
+
+}
+
+// a big jack, no float line: holding on tows you toward it; let go and it takes the gun
+{
+
+	const W = makeWorld( [ { name: 'jack', model: 'jack', L: 0.75, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	const { sp, input, player } = W;
+	shootAt( W );
+	ok( sp.phase === 'fight' && sp.fight.big && sp.fight.kg > 4, `a ${ sp.fight.kg.toFixed( 1 ) } kg jack is a big one (${ sp.target.zone })` );
+	let towed = 0, toward = 0;
+	for ( let t = 0; t < 1.5 && sp.phase === 'fight'; t += 1 / 60 ) {
+
+		W.frame( 1 / 60 );
+		const F = sp.fight, d = new E.Vector3( F.p.x, F.p.y, F.p.z ).sub( player.position );
+		if ( player.tug.length() > towed ) {
+
+			towed = player.tug.length();
+			toward = player.tug.clone().normalize().dot( d.normalize() );
+
+		}
+
+	}
+
+	ok( towed > 0.1 && toward > 0.8, `holding on, it tows you toward it (${ towed.toFixed( 2 ) } m/s, ${ toward.toFixed( 2 ) })` );
+	ok( sp.cue() && /Pulling hard|running|tearing/.test( sp.cue().text ), `the cue: "${ sp.cue() && sp.cue().text }"` );
+	input._hit.add( 'KeyG' );
+	W.frame();
+	ok( sp.phase === 'loose' && sp.loose && ! sp.loose.float && sp.gun.loose, 'G lets go of the gun' );
+	const g0 = sp.loose.gun.p.clone();
+	W.run( 4 );
+	ok( sp.loose.gun.p.distanceTo( g0 ) > 1.5, `the jack tows the gun away (${ sp.loose.gun.p.distanceTo( g0 ).toFixed( 1 ) } m)` );
+	ok( player.tug.length() === 0, 'and no longer you' );
+	ok( /Your gun/.test( sp.cue().text ), `the cue says where it is: "${ sp.cue().text }"` );
+	W.run( 20 );
+	player.position.copy( sp.loose.gun.p ).add( new E.Vector3( 0.4, 0, 0 ) );
+	input._hit.add( 'KeyE' );
+	W.frame();
+	ok( sp.phase === 'fight' && ! sp.loose && sp.fight, 'swim to the gun, E: back in hand, the fish still on' );
+
+}
+
+// a big jack on a float line: let go, the float tires it, pull it in from the surface, breathing
+{
+
+	const W = makeWorld( [ { name: 'jack', model: 'jack', L: 0.75, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	const { sp, input, player, game } = W;
+	shootAt( W, { upgrades: { float: 1 } } );
+	input._hit.add( 'KeyG' );
+	W.frame();
+	ok( sp.phase === 'loose' && sp.loose.float && Math.abs( sp.loose.float.p.y ) < 1e-6, 'G lets go: the float is at the surface above you' );
+	W.run( 20 );
+	const F = sp.fight;
+	ok( F && F.result !== 'free' && F.stamina < 0.2, `towing the gun and the float tires it (stamina ${ F && F.stamina.toFixed( 2 ) }) without tearing the shaft (tear ${ F && F.tear.toFixed( 2 ) })` );
+	// up for air, to the float
+	sp.apnea.o2 = 0.1;
+	player.position.set( sp.loose.float.p.x + 0.5, 0, sp.loose.float.p.z );
+	input._hit.add( 'KeyE' );
+	W.frame();
+	ok( sp.loose && sp.loose.float.held, 'at the float, E takes the float line' );
+	let t = 0;
+	for ( ; t < 60 && sp.phase === 'loose'; t += 1 / 60 ) W.frame( 1 / 60, { lmb: true } );
+	ok( sp.phase === 'fight', `pulled the line in from the top: the gun is back in hand after ${ t.toFixed( 0 ) } s` );
+	ok( sp.apnea.o2 > 0.2, `breathing all the while (O2 ${ sp.apnea.o2.toFixed( 3 ) })` );
+	for ( t = 0; t < 20 && sp.phase === 'fight' && sp.fishDistance() > 1.15; t += 1 / 60 ) W.frame( 1 / 60, { lmb: sp.fight.tension < sp.fight.holdN * 0.5 } );
+	for ( let k = 0; k < 8 && sp.phase === 'fight'; k ++ ) {
+
+		input._hit.add( 'KeyE' );
+		W.frame();
+
+	}
+
+	ok( game.state.inventory.length === 1 && game.state.inventory[ 0 ].species === 'jack', `landed: ${ game.state.inventory.map( ( f ) => `${ f.species } ${ f.kg } kg` ) }` );
+
+}
+
+// a snapper over the reef bolts into a coral head and wedges itself in
+{
+
+	// a coral head 1.4 m high, 1.5 m across, beside the fish
+	const head = { x: 0.8, z: - 2.2 };
+	const reefAt = ( x, z ) => Math.hypot( x - head.x, z - head.z ) < 0.75 ? - 8.6 : - 10;
+	const mk = () => {
+
+		const W = makeWorld( [ { name: 'yellowtail', model: 'yellowtail', L: 0.36, p: [ 0, - 8, - 2 ], h: [ 1, 0, 0 ] } ], { depth: 8, reefAt } );
+		W.app.terrainData = { heightAt: () => - 10 };
+		W.sp.rng = () => 0.01; // it always holes when it can
+		return W;
+
+	};
+
+	let W = mk();
+	shootAt( W );
+	ok( W.sp.fight && W.sp.fight.holeState === 'going', `speared, it bolts for the reef (${ W.sp.fight && W.sp.fight.holeState })` );
+	W.run( 3 );
+	ok( W.sp.fight.wedged, 'and wedges itself in' );
+	let t = 0;
+	for ( ; t < 10 && W.sp.phase === 'fight'; t += 1 / 60 ) W.frame( 1 / 60, { lmb: true } );
+	ok( W.sp.phase === 'out' && ! W.sp.fight, `hauling on it tears the shaft out (${ t.toFixed( 1 ) } s)` );
+
+	W = mk();
+	shootAt( W );
+	W.run( 3 );
+	const F = W.sp.fight;
+	const fishAt = () => new E.Vector3( F.p.x, F.p.y, F.p.z );
+	// the diver's hand ahead of the eye (the camera looks along -z)
+	const beside = () => W.player.position.copy( fishAt() ).add( new E.Vector3( 0, 0.2, 0.45 ) );
+	beside();
+	W.frame();
+	W.input._hit.add( 'KeyE' );
+	W.frame();
+	ok( W.sp.phase === 'fight' && W.toasts.at( - 1 ).includes( 'wedged tight' ), `reaching in at once: it is wedged tight ("${ W.toasts.at( - 1 ) }")` );
+	W.run( 25 );
+	ok( F.wedge < 0.45 && W.sp.phase === 'fight', `left alone 25 s it calms down (wedge ${ F.wedge.toFixed( 2 ) })` );
+	W.input._hit.add( 'KeyE' );
+	W.frame();
+	ok( W.sp.phase === 'home' && W.game.state.inventory.length === 1, `then reaching in works it out: ${ W.game.state.inventory.map( ( f ) => f.species ) }` );
+
+}
+
+// a stoned fish, a blackout with a big fish on
+{
+
+	const W = makeWorld( [ { name: 'jack', model: 'jack', L: 0.75, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	const { sp } = W;
+	shootAt( W, { upgrades: { float: 1 } } );
+	sp.apnea.o2 = 0.02;
+	W.run( 0.2 );
+	ok( sp.phase === 'blackout' && sp.loose && sp.loose.float, 'blacking out with a fish on: the gun drops, out on the float line' );
+	W.run( 6 );
+	ok( sp.phase === 'loose' && sp.fight, `you come round with the rig still out (${ sp.phase })` );
 
 }
 

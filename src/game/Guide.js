@@ -81,8 +81,9 @@ const CARDS = [
 			${ row( k( 'C' ), 'Dive (or look down and swim). <kbd>Space</kbd> back up' ) }
 			${ row( k( 'Hold', 'RMB' ), 'Aim down the shaft (or <kbd>Q</kbd> to raise / lower it). Glide in slowly: fish bolt from a fast diver' ) }
 			${ row( k( 'LMB' ), 'Shoot, <b>within about three gun lengths</b>. Behind the eye is a stone shot' ) }
-			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. <b>Ease off when it runs</b>, or the shaft tears out' ) }
-			${ row( k( 'E' ), 'Grab the fish once it is in reach' ) }
+			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. A big fish runs: <b>ease off when it pulls hard</b>, or the shaft tears out' ) }
+			${ row( k( 'G' ), 'With a big fish on, <b>let go of the gun</b>. On a float line, pull it in from the surface' ) }
+			${ row( k( 'E' ), 'Grab the fish once it is in reach, or reach into the reef for one holed up' ) }
 		</div>
 		<p style="margin:0;color:var(--tw-ink-3);font-size:var(--tw-fs-sm)">Every dive is one breath: turn back up at the first <b>contractions</b>. Protected fish (parrotfish, Nassau grouper, tarpon, turtles, rays) and undersized ones cost you a fine, and a shot at the humpback costs $5,000.</p>`,
 	},
@@ -105,7 +106,10 @@ const CARDS = [
 const TIPS = {
 	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly and hold the <b>right mouse button</b> to aim (on a trackpad, <kbd>Q</kbd>).',
 	contractions: 'Those are <b>contractions</b>: your body asking for air. Head up now, the oxygen runs out fastest on the way up.',
-	fishOn: '<b>Hold the left mouse button</b> to haul it in. When the needle nears the <b>red</b>, let go: the shaft is tearing out of the flesh.',
+	fishOn: 'A big one, and it\'s running. <b>Hold the left mouse button</b> to haul, and let go when it pulls hard or the shaft tears out. Short of breath? <kbd>G</kbd> lets go of the gun: on a <b>float line</b> the float tires it while you go up, then grab the float and pull it in from the top.',
+	holed: 'It <b>holed up</b> in the reef and wedged itself in with its fins. Pulling only tears the shaft out. Let it be (<kbd>G</kbd> lets go of the gun), go up for air, then dive back and reach in (<kbd>E</kbd>) once it calms down.',
+	loose: 'Your gun is out on the fish\'s line. Follow it, and grab it (<kbd>E</kbd>) once the fish tires.',
+	float: 'The float is out at the surface, tiring the fish. Swim to it, grab it (<kbd>E</kbd>) and <b>hold the left mouse button</b> to pull the line in. You can breathe up here.',
 	missed: 'Missed. <b>Hold the left mouse button</b> to haul the shaft back on its line, then reload.',
 	caught: 'Into the cooler (<kbd>I</kbd>). Sell your catch to <b>Joe</b> at the fish stand by the pier: he is on the map.',
 	full: 'Your cooler is <b>full</b>. Sell to Joe, or buy a bigger hold from Marta at the chandlery.',
@@ -350,7 +354,12 @@ export class Guide {
 		if ( sp.equipped && ! prev.equipped ) this.tip( 'gunOut' );
 		if ( sp.apnea.under && sp.apnea.contractions > 0 ) this.tip( 'contractions' );
 		if ( sp.phase === 'out' && ! sp.fight ) this.tip( 'missed' );
-		if ( g.fight && ! prev.fight ) this.tip( 'fishOn' );
+		const fv = g.fight;
+		if ( fv && fv.big && ! fv.holed && ! fv.going && ! prev.big ) this.tip( 'fishOn' );
+		if ( fv && fv.holed ) this.tip( 'holed' );
+		if ( sp.loose && ! sp.loose.float && ! ( fv && fv.holed ) ) this.tip( 'loose' );
+		if ( sp.loose && sp.loose.float ) this.tip( 'float' );
+		prev.big = !! ( fv && fv.big );
 		const lc = g.state.lastCatch;
 		if ( lc && lc !== prev.lastCatch && lc.kept ) this._afterCard = 'caught';
 		if ( this._afterCard && ! ( g.hud && g.hud.catchOpen ) ) {

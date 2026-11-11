@@ -32,8 +32,13 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
   shot through the tail fin or under the belly misses. Where it hits matters: behind the eye is a stone
   shot, the spine paralyses, a belly or tail shot holds badly. A weak or long shot glances off the scales
   or lodges without opening the flopper.
-- The fish on the line swims against it in surges and tires; haul it in hand over hand, ease off when it
-  runs or the shaft tears out of the flesh. A big one tows you. A gun reel lets it take line instead.
+- After the shot, as on a real reef: a stone shot or a small fish (under 2 kg) is a short haul and a grab.
+  A big one runs: hold on and it tows you, costs breath and may tear the shaft out of the flesh; a gun reel
+  lets it take line; or let go of the gun (G). On a float line the float tires it at the surface while you
+  go up, then you grab the float and pull it in from the top, breathing. Groupers and snappers over the
+  reef can bolt into a coral head and wedge themselves in: pulling only tears the shaft out, so leave it,
+  go up for air, and reach in by hand once it calms down. No tension gauge: one line on screen says what
+  the fish is doing.
 - Breath-hold diving: oxygen partial pressure falls with depth on the way up (shallow-water blackout), CO2
   brings the urge to breathe and contractions, hypoxia narrows your vision, and a blackout ends the dive.
   A freediving computer shows depth, dive time and the surface interval.
@@ -101,7 +106,8 @@ breach. It runs directly on WebGPU and WGSL with its own small rendering engine,
 | Right mouse | Hold to aim down the shaft |
 | Q | Aim on / off, for a trackpad (then a click shoots, a held click hauls) |
 | Left mouse | Shoot (under water only) · hold to haul the line in |
-| E | Grab a fish that's in reach (also: interact) |
+| E | Grab a fish that's in reach, reach into the reef for a holed fish, take your gun or the float line back (also: interact) |
+| G (fish on) | Let go of the gun |
 | I or Tab | Cooler / fish hold and the fish log |
 | F | Free camera |
 | L | Flashlight |
@@ -123,8 +129,10 @@ preset; change it in the Performance tab, or with `?quality=high`.
 Swim out from the beach or take the boat to the reef and drop in. Press G for the gun and hold R to pull
 each band back to the shaft. Dive (C, or look down and swim), glide in slowly and hold the right mouse
 button to aim down the shaft; shoot within about three gun lengths. Hold the left mouse button to haul the
-line: a missed shaft comes back on it, a speared fish fights it. Ease off when the needle nears the red, or
-the shaft tears out. Once the fish is in reach, E grabs it and it goes in the cooler. Every dive is one
+line: a missed shaft comes back on it, a speared fish comes in on it. A small fish comes straight in; a big
+one runs, so ease off when it pulls hard, or press G to let go of the gun and, with a float line, pull it
+in from the surface. A fish holed up in the reef: let go, breathe, and come back to reach in (E). Once the
+fish is in reach, E grabs it and it goes in the cooler. Every dive is one
 breath: watch the urge to breathe on your dive computer, turn back at the first contractions, and breathe
 up at the surface between dives. Yellowtail school over the reef, grunts and snappers hang around the pier
 piles, jacks and barracuda patrol the drop-off. Sell your catch to Joe at the fish stand on the beach by
@@ -146,7 +154,7 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noSim` | Skip the swash (shallow-water) simulation |
 | `hunt` | Practice: start under water by a school of jacks with the gun loaded, calm fish and endless breath. `hunt=barracuda` for another kind (`hunt=list` names them), N for the next school, `__hunt('grunt')` from the console |
 | `dist=3` | With `hunt`: how far from the school (m) |
-| `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, carbon fins), kept in your save; it gives exactly the money it costs |
+| `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, float line, carbon fins), kept in your save; it gives exactly the money it costs |
 | `wild` | With `hunt`: wary fish and a real breath-hold |
 | `quality=phone` | The phone preset (lower resolution, smaller shadow map, coarser ocean mesh, no sun shafts or water reflections); `quality=high` the full one. Touch-only devices pick `phone` |
 | `touch` | Touch controls from the start |

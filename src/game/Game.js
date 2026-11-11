@@ -189,7 +189,7 @@ export class Game {
 		if ( this.hud ) this.hud.update( {
 			fuel: aboard ? { litres: this.state.fuelL, tank: this.state.stats.fuelL } : null,
 			sonar: aboard && this.state.stats.finder ? this._sonar : null,
-			fight: this.fight,
+			fight: null, // no gauge: the spear HUD's cue says what the fish does (SpearHUD)
 			casting: false,
 			power: 0,
 			bite: false,

@@ -48,7 +48,7 @@ const TOP = [ { id: 'bag', label: 'Bag', tap: 'KeyI' } ];
 // key names in the prompts -> the buttons that do them
 const KEY_WORDS = [
 	[ /\bHold LMB\b/g, 'Hold Fire' ], [ /\bLMB\b/g, 'Fire' ], [ /\bRMB\b/g, 'Aim' ], [ /\bHold R\b/g, 'Hold Load' ],
-	[ /\bHold to aim \(or Q\)/g, 'Tap to aim' ], [ /\bQ\b/g, 'Aim' ], [ /\bE\b/g, 'Use' ], [ /\bG\b/g, 'Gun' ], [ /\bR\b/g, 'Load' ],
+	[ /\bHold to aim \(or Q\)/g, 'Tap to aim' ], [ /\bG\s+let go of the gun/g, 'Let go  of the gun' ], [ /\bQ\b/g, 'Aim' ], [ /\bE\b/g, 'Use' ], [ /\bG\b/g, 'Gun' ], [ /\bR\b/g, 'Load' ],
 	[ /\bSpace\b/g, 'Up' ], [ /\bV\b/g, 'Cam' ], [ /\bI\b/g, 'Bag' ],
 ];
 export function touchWords( text ) {
@@ -285,12 +285,21 @@ export class TouchControls {
 		};
 		for ( const id in this.btn ) this.btn[ id ].classList.toggle( 'is-shown', !! show[ id ] );
 		this.btn.up.textContent = swim || free ? 'Up' : 'Jump';
+		// with a fish on, the gun button lets go of the gun
+		const letGo = sp.phase === 'fight';
+		this.btn.gun.textContent = letGo ? 'Let go' : 'Gun';
 		this.btn.aim.classList.toggle( 'is-latched', !! sp.aimLatched );
 		// cue the button the prompt asks for
 		const key = prompt ? String( prompt.key ) : '';
 		const cue = /LMB/.test( key ) ? 'fire' : /RMB|^Q$/.test( key ) ? 'aim' : /\bR\b/.test( key ) ? 'load' : key === 'E' ? 'use' : key === 'G' ? 'gun' : key === 'Space' ? 'up' : null;
 		for ( const id in this.btn ) this.btn[ id ].classList.toggle( 'is-cue', id === cue );
-		if ( prompt ) p.prompt = { key: touchWords( prompt.key ), text: touchWords( prompt.text ) };
+		if ( prompt ) {
+
+			let k = touchWords( prompt.key );
+			if ( letGo && k === 'Gun' ) k = 'Let go';
+			p.prompt = { key: k, text: touchWords( prompt.text ) };
+
+		}
 
 	}
 

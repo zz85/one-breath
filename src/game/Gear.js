@@ -21,6 +21,12 @@ export const UPGRADES = {
 		{ cost: 0, label: 'No reel (shooting line only)', reelM: 0, reelDrag: 0 },
 		{ cost: 220, label: '30 m reel with drag', reelM: 30, reelDrag: 70 },
 	] },
+	// a float line from the gun's butt to a float at the surface: let go of the gun on a big fish and
+	// the float tires it; pull it in from the top, where you can breathe
+	float: { name: 'Float line', levels: [
+		{ cost: 0, label: 'No float line', floatM: 0 },
+		{ cost: 140, label: '20 m float line and torpedo float', floatM: 20 },
+	] },
 	fins: { name: 'Fins', levels: [
 		{ cost: 0, label: 'Snorkelling fins', swimMul: 1 },
 		{ cost: 110, label: 'Long-blade freediving fins', swimMul: 1.25 },

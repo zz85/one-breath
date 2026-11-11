@@ -3,6 +3,9 @@
 //                 the surface interval, and the urge to breathe as you feel it (not your oxygen:
 //                 no diver can read that, and the danger is that it doesn't hurt)
 //   beside it     the gun: one pip per band (loaded / loading / slack) and whether the shaft is home
+//   bottom centre one line about the fish on the line, in place of a tension gauge: what it does
+//                 ("Pulling hard", "Holed up in the reef") and the warnings that matter (the shaft
+//                 tearing out); and where your gun or float is while you've let go
 //   full screen   tunnel vision as the oxygen runs low, a pulse at each contraction, and the fade to
 //                 black of a blackout
 const CSS = /* css */`
@@ -27,6 +30,14 @@ const CSS = /* css */`
 .sp-pip.is-loaded > span { height: 100%; }
 .sp-shaft { margin-left: 4px; }
 .sp-shaft.is-out { color: var(--tw-sun); }
+.sp-cue { position: absolute; left: 50%; bottom: calc(max(calc(72 * var(--tw-u)), 13vh) + calc(58 * var(--tw-u))); transform: translate(-50%, 6px);
+	padding: var(--tw-2) var(--tw-4); border-radius: 999px; font: 600 var(--tw-fs-md) var(--tw-font); color: var(--tw-ink); white-space: nowrap;
+	opacity: 0; transition: opacity var(--tw-fast), transform var(--tw-med) var(--tw-ease); pointer-events: none; }
+.sp-cue.is-on { opacity: 1; transform: translate(-50%, 0); }
+.sp-cue.is-warn { color: var(--tw-sun); }
+.sp-cue.is-bad { color: var(--tw-coral); animation: sp-throb 0.6s ease-in-out infinite; }
+.sp-cue.is-good { color: var(--tw-aqua); }
+@keyframes sp-throb { 50% { transform: translate(-50%, 0) scale(1.05); } }
 .sp-tunnel { position: absolute; inset: 0; pointer-events: none; opacity: 0;
 	background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) calc(var(--r, 70) * 1%), rgba(4,8,12,0.94) calc(var(--r, 70) * 1% + 22%)); }
 .sp-pulse { position: absolute; inset: 0; pointer-events: none; opacity: 0; box-shadow: inset 0 0 calc(160 * var(--tw-u)) rgba(120, 10, 20, 0.55); }
@@ -54,6 +65,8 @@ export class SpearHUD {
 		this.tunnel = h( 'div', 'sp-tunnel' );
 		this.pulse = h( 'div', 'sp-pulse' );
 		this.black = h( 'div', 'sp-black' );
+		this.cueEl = h( 'div', 'sp-cue tw-glass' );
+		this._cue = '';
 		this.watch = h( 'div', 'sp-watch tw-glass', `
 			<div class="sp-depth">0.0<small>m</small></div>
 			<div class="sp-col"><span>DIVE <b class="sp-time">0:00</b></span><span>MAX <b class="sp-max">0.0 m</b></span><span>SURF <b class="sp-si">0:00</b></span></div>
@@ -71,11 +84,25 @@ export class SpearHUD {
 		this.shaftEl = this.watch.querySelector( '.sp-shaft' );
 		this._pips = - 1;
 		this._show = 0;
-		root.append( this.tunnel, this.pulse, this.black, this.watch );
+		root.append( this.tunnel, this.pulse, this.black, this.watch, this.cueEl );
 
 	}
 
-	update( dt, { apnea, depth, under, gun, contraction, blackout } ) {
+	update( dt, { apnea, depth, under, gun, contraction, blackout, cue = null } ) {
+
+		const key = cue ? `${ cue.level }|${ cue.text }` : '';
+		if ( key !== this._cue ) {
+
+			this._cue = key;
+			if ( cue ) {
+
+				this.cueEl.textContent = cue.text;
+				this.cueEl.className = `sp-cue tw-glass is-on${ cue.level ? ' is-' + cue.level : '' }`;
+
+			} else this.cueEl.classList.remove( 'is-on' );
+
+		}
+
 
 		// the watch: under water, or for a while after surfacing (the surface interval)
 		this._show = under ? 8 : Math.max( 0, this._show - dt );

@@ -73,6 +73,19 @@ export class SpearGun {
 		this.lineMesh.castShadow = false;
 		this.lineMesh.visible = false;
 		scene.add( this.lineMesh );
+		// let go of: the gun on its own in the water ({ p: muzzle, dir: butt to muzzle }), and the float
+		// line from its butt to a torpedo float at the surface (or in the diver's hand)
+		this.loose = null;
+		this.float = null; // { p } while the float line is out
+		this.floatMesh = this._mesh( 'SpearFloat', buildFloatGeometry() );
+		this.floatLineMat = createLineMaterial( LINE_SEGS );
+		this.floatLine = new Mesh( buildLineGeometry( LINE_SEGS ), this.floatLineMat );
+		this.floatLine.name = 'FloatLine';
+		this.floatLine.frustumCulled = false;
+		this.floatLine.castShadow = false;
+		this.floatLine.visible = false;
+		scene.add( this.floatLine );
+		this.butt = new Vector3();
 		this.setGear( { gunM: 0.75, bands: 1, gunKind: 'wood' } );
 
 	}
@@ -172,9 +185,20 @@ export class SpearGun {
 		_x.crossVectors( _y, _z ).normalize();
 		_m.makeBasis( _x, _y, _z ).setPosition( _h.copy( p.hand ).addScaledVector( _y, - GRIP_Y + r * 0.06 ) );
 		cam.updateMatrixWorld();
-		const M = this.gunMesh.matrix.multiplyMatrices( cam.matrixWorld, _m );
+		let M;
+		if ( this.loose ) {
+
+			// let go of: towed muzzle first behind the fish, rolled a little
+			const L = this.loose;
+			_y.copy( L.dir ).normalize();
+			_w.copy( Math.abs( _y.y ) > 0.95 ? _x.set( 1, 0, 0 ) : _up );
+			_z.copy( _w ).addScaledVector( _y, - _y.dot( _w ) ).normalize();
+			_x.crossVectors( _y, _z ).normalize();
+			M = this.gunMesh.matrix.makeBasis( _x, _y, _z ).setPosition( _h.copy( L.p ).addScaledVector( _y, - this.gunM ) );
+
+		} else M = this.gunMesh.matrix.multiplyMatrices( cam.matrixWorld, _m );
 		this.gunMesh.matrixWorldNeedsUpdate = true;
-		const show = visible && ( this.equipped || p.elev > GUN_POSES.stowed.elev + 0.1 );
+		const show = this.loose ? true : visible && ( this.equipped || p.elev > GUN_POSES.stowed.elev + 0.1 );
 		this.gunMesh.visible = show;
 		for ( let b = 0; b < 2; b ++ ) {
 
@@ -192,6 +216,28 @@ export class SpearGun {
 		this.gunToWorld( 0, this.gunM, RAIL_Z, this.muzzle );
 		this.gunToWorld( 0, this.gunM - 0.01, - 0.03, this.lineClip );
 		this.forward.set( 0, 1, 0 ).transformDirection( M );
+		this.gunToWorld( 0, 0.02, - 0.01, this.butt );
+
+		// the float and its line to the gun's butt
+		const F = this.float;
+		this.floatMesh.visible = !! F;
+		this.floatLine.visible = !! F;
+		if ( F ) {
+
+			// lying along the line's pull, bobbing a little
+			_v.copy( this.butt ).sub( F.p ).setY( 0 );
+			const yaw = _v.lengthSq() > 1e-6 ? Math.atan2( _v.x, _v.z ) : 0;
+			this.floatMesh.matrix.makeRotationY( yaw ).setPosition( F.p.x, F.p.y + 0.02 + Math.sin( this.t * 1.7 ) * 0.015, F.p.z );
+			this.floatMesh.matrixWorldNeedsUpdate = true;
+			const lm = this.floatLineMat.uniforms;
+			lm.lineA.value.copy( F.p );
+			lm.lineB.value.copy( this.butt );
+			const len = F.p.distanceTo( this.butt );
+			lm.lineCtl.value.copy( F.p ).lerp( this.butt, 0.5 );
+			lm.lineCtl.value.y -= Math.max( 0, ( F.slack || 0 ) ) * len * 0.25;
+			lm.lineShow.value = 1;
+
+		}
 
 		// the shaft: in the rail, or out on its own
 		const S = this.shaftMesh;
@@ -395,6 +441,28 @@ export function buildShaftGeometry( gunM ) {
 	// tail: the line hole and a crimped loop of mono
 	add( cylinder( R * 1.1, R, 0.012, 10 ), { ...STAINLESS, matrix: mat4( 0, 0.006, 0 ) } );
 	add( rod( new Vector3( 0, 0.004, 0 ), new Vector3( 0, - 0.012, - 0.004 ), 0.0009, 4 ), MONO );
+	return mergePrepared( parts );
+
+}
+
+// a torpedo float: 60 cm of orange foam with a reflective band, the line's ring at the front; it lies
+// along local +Z
+function buildFloatGeometry() {
+
+	const parts = [];
+	const ORANGE = { color: 0xff5a0a, rough: 0.55, metal: 0, pattern: PAT.plain };
+	const WHITE = { color: 0xe8e8e2, rough: 0.35, metal: 0, pattern: PAT.plain };
+	const prof = [];
+	for ( let i = 0; i <= 16; i ++ ) {
+
+		const t = i / 16;
+		prof.push( [ 0.085 * Math.sin( Math.PI * Math.pow( t, 0.8 ) ) + 0.002, t * 0.6 - 0.3 ] );
+
+	}
+
+	parts.push( prepare( lathe( prof, 18 ), { ...ORANGE, matrix: mat4( 0, 0, 0, Math.PI / 2, 0, 0 ) } ) );
+	parts.push( prepare( cylinder( 0.087, 0.087, 0.05, 18 ), { ...WHITE, matrix: mat4( 0, 0, 0.04, Math.PI / 2, 0, 0 ) } ) );
+	parts.push( prepare( sphere( 0.012, 8, 6 ), { ...STAINLESS, matrix: mat4( 0, 0, 0.305 ) } ) );
 	return mergePrepared( parts );
 
 }

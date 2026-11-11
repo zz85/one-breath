@@ -2154,7 +2154,7 @@ export class UI {
 						<h3>Interact</h3>
 						${ row( k( 'E' ), 'Interact<small>Board, helm, step ashore, trade</small>' ) }
 						${ row( k( 'V' ), 'Boat camera<small>1st / 3rd person</small>' ) }
-						${ row( k( 'G' ), 'Speargun<small>Take out / put away</small>' ) }
+						${ row( k( 'G' ), 'Speargun<small>Take out / put away; with a fish on, let go of it</small>' ) }
 						${ row( k( 'R' ), 'Load a band<small>Hold; two pulls for two bands</small>' ) }
 						${ row( k( 'RMB' ), 'Aim<small>Hold: the gun comes up to your eye</small>' ) }
 						${ row( k( 'Q' ), 'Aim on / off<small>For a trackpad</small>' ) }
