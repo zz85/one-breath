@@ -1930,12 +1930,17 @@ export class UI {
 			<div class="tw-stats-sub">
 				<span class="tw-kv"><span class="tw-k">frame</span><span class="tw-v tw-ms">--</span></span>
 				<span class="tw-kv tw-kv-gpu" hidden><span class="tw-k">gpu</span><span class="tw-v tw-gpu">--</span></span>
-			</div>`;
+				<span class="tw-kv tw-kv-p95" hidden><span class="tw-k">p95</span><span class="tw-v tw-p95">--</span></span>
+			</div>
+			<div class="tw-stats-q" hidden></div>`;
 		this.fpsEl = stats.querySelector( '.tw-fps' );
 		this.msEl = stats.querySelector( '.tw-ms' );
 		this.gpuEl = stats.querySelector( '.tw-gpu' );
 		this.gpuKv = stats.querySelector( '.tw-kv-gpu' );
 		this.sparkEl = stats.querySelector( '.tw-spark' );
+		this.p95El = stats.querySelector( '.tw-p95' );
+		this.p95Kv = stats.querySelector( '.tw-kv-p95' );
+		this.qEl = stats.querySelector( '.tw-stats-q' );
 
 		const brand = h( 'div', 'tw-brand' );
 		brand.innerHTML = `${ brandMark() }<span class="tw-brand-name">TIDEWATER</span>`;
@@ -2927,7 +2932,7 @@ export class UI {
 
 		const num = ( v ) => ( typeof v === 'number' && isFinite( v ) ? v : NaN );
 		let fps = num( s.fps ), frameMs = num( s.frameMs );
-		const gpuMs = num( s.gpuMs );
+		const gpuMs = num( s.gpuMs ), p95 = num( s.p95Ms );
 		if ( ! ( fps > 0 ) && frameMs > 0 ) fps = 1000 / frameMs;
 		if ( ! ( frameMs > 0 ) && fps > 0 ) frameMs = 1000 / fps;
 
@@ -2970,6 +2975,18 @@ export class UI {
 		const hasGpu = gpuMs >= 0;
 		if ( this.gpuKv.hidden === hasGpu ) this.gpuKv.hidden = ! hasGpu;
 		if ( hasGpu ) this.gpuEl.textContent = `${ gpuMs.toFixed( 1 ) } ms`;
+		// the 95th percentile frame of the last seconds (core/Tune.js FrameStats), and the quality line
+		const hasP95 = p95 > 0;
+		if ( this.p95Kv.hidden === hasP95 ) this.p95Kv.hidden = ! hasP95;
+		if ( hasP95 ) this.p95El.textContent = `${ p95.toFixed( 1 ) } ms`;
+		const q = typeof s.quality === 'string' ? s.quality : '';
+		if ( q !== this._qTxt ) {
+
+			this._qTxt = q;
+			this.qEl.textContent = q;
+			this.qEl.hidden = ! q;
+
+		}
 
 	}
 

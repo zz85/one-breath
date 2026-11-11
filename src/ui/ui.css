@@ -602,6 +602,13 @@ body {
 	height: calc(26 * var(--tw-u));
 }
 
+.tw-stats-q {
+	grid-column: 1 / -1;
+	font-family: var(--tw-mono);
+	font-size: var(--tw-fs-xs);
+	color: var(--tw-ink-3);
+}
+
 .tw-stats-sub {
 	grid-area: sub;
 	display: flex;

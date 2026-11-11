@@ -3,11 +3,13 @@
 //   ?hunt=barracuda    another kind (the world's swimmers, world/Fish.js; ?hunt=list names them)
 //   &dist=3            how far from the school (m)
 //   &gear              the best gear (a 110 cm carbon gun, the best shaft, a reel, carbon fins),
-//                      bought with money given for it; it stays in your save
+//                      bought with exactly the money it costs; it stays in your save
 //   &wild              the fish as wary as ever and a real breath-hold (practice makes them calm and
 //                      your breath endless otherwise)
 // In practice mode N takes you to another school of the same kind. window.__hunt( name, dist ) does
 // the same from the console, with or without ?hunt.
+import { nextLevel } from './Gear.js';
+
 const BEST = [ 'gun', 'gun', 'shaft', 'shaft', 'reel', 'fins', 'fins' ];
 
 export class Practice {
@@ -25,9 +27,16 @@ export class Practice {
 		if ( ! this.on ) return;
 		if ( qs.has( 'gear' ) ) {
 
+			// money for exactly what's missing, so a reload with &gear doesn't pile up cash
 			const s = game.state;
-			s.money += 5000;
-			for ( const k of BEST ) s.buy( k );
+			for ( const k of BEST ) {
+
+				const next = nextLevel( s.upgrades, k );
+				if ( ! next ) continue;
+				s.money += next.cost;
+				s.buy( k );
+
+			}
 
 		}
 

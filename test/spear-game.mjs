@@ -364,6 +364,9 @@ for ( const gunLevel of [ 2, 0 ] ) {
 	ok( ( fx * ( 30 - player.position.x ) + fz * ( 40 - player.position.z ) ) / d > 0.99, 'facing them' );
 	ok( sp.equipped && sp.gun.bandsLoaded === sp.stats.bands && sp.stats.bands === 2, 'gun out, both bands loaded' );
 	ok( game.state.upgrades.gun === 2 && game.state.upgrades.reel === 1 && game.state.upgrades.fins === 2, '&gear: the best gun, a reel, carbon fins' );
+	ok( game.state.money === 0, `&gear costs nothing and leaves no cash (purse $${ game.state.money })` );
+	new Practice( game );
+	ok( game.state.money === 0, 'a second &gear (a reload) adds nothing' );
 	W.run( 90 );
 	ok( ! sp.apnea.blackout && sp.phase !== 'blackout' && W.fish.wary === 0.25, `endless breath after 90 s, calm fish (wary ${ W.fish.wary })` );
 	ok( pr.goTo( 'grunt', 2 ).includes( 'grunt' ) && Math.hypot( player.position.x + 20, player.position.z - 10 ) < 2.01, '__hunt( grunt, 2 ) moves you to the grunts' );

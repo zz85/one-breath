@@ -1,6 +1,7 @@
 import * as THREE from '../engine/index.js';
 import { UI } from './UI.js';
 import { QUALITY, applyQuality } from '../core/Quality.js';
+import { FrameStats, Tune, showResults } from '../core/Tune.js';
 import { G } from '../core/Globals.js';
 import { GroundBounce } from '../materials/GroundBounce.js';
 
@@ -262,6 +263,54 @@ export class AppUI {
 
 		this._t = 0;
 
+		// frame-time statistics and the quality sweep (core/Tune.js): ?tune, __tune(), or a long press
+		// on the frame-rate panel on a touch screen
+		this.frames = new FrameStats( 5 );
+		this.tune = new Tune( app );
+		this.tune.onStep = ( k, n, st ) => ui.toast( `Measuring ${ QUALITY[ st.preset ].label } at ${ Math.round( st.scale * 100 ) }% · ${ k + 1 } / ${ n }`, ( this.tune.settle + this.tune.measure ) * 1000 );
+		this.tune.onDone = ( results, best ) => {
+
+			s.preset = best.preset;
+			s.renderScale = best.scale;
+			s.ssr = QUALITY[ best.preset ].ssr;
+			quality.refresh();
+			console.table( results.map( ( r ) => ( { preset: r.preset, scale: r.scale, render: r.size, fps: +r.fps.toFixed( 1 ), median: +r.median.toFixed( 1 ), p95: +r.p95.toFixed( 1 ), worst: +r.worst.toFixed( 1 ) } ) ) );
+			showResults( ui.root, results, best, this._loaded );
+
+		};
+		this._loaded = app.qualityName;
+		this._tuneAt = app.qs && app.qs.has( 'tune' ) ? 6 : - 1; // s after the first frame
+		window.__tune = () => {
+
+			this.tune.start();
+			return `sweeping ${ this.tune.steps.length } settings, ${ ( this.tune.steps.length * ( this.tune.settle + this.tune.measure ) ).toFixed( 0 ) } s: hold still`;
+
+		};
+
+	}
+
+	// a long press on the frame-rate panel starts the sweep (touch screens: there is no console)
+	_bindTunePress() {
+
+		const el = this.ui.statsEl;
+		if ( ! el || this._tunePress ) return;
+		this._tunePress = true;
+		el.classList.add( 'tw-interactive' );
+		el.removeAttribute( 'aria-hidden' );
+		let timer = 0;
+		el.addEventListener( 'pointerdown', ( e ) => {
+
+			e.stopPropagation();
+			timer = setTimeout( () => {
+
+				if ( this.tune.running ) this.tune.cancel();
+				else window.__tune();
+
+			}, 700 );
+
+		} );
+		for ( const t of [ 'pointerup', 'pointercancel', 'pointerleave' ] ) el.addEventListener( t, () => clearTimeout( timer ) );
+
 	}
 
 	// per-frame HUD
@@ -269,7 +318,16 @@ export class AppUI {
 
 		const app = this.app;
 		const ui = this.ui;
-		ui.setStats( { fps: app.fps, frameMs: dt * 1000 } );
+		this.frames.push( dt * 1000 );
+		this.tune.update( dt );
+		if ( this._tuneAt > 0 && ( this._tuneAt -= dt ) <= 0 ) window.__tune();
+		if ( app.input && app.input.touch ) this._bindTunePress();
+		const fs = this.frames.summary();
+		const sr = app.sceneRenderer;
+		ui.setStats( {
+			fps: app.fps, frameMs: dt * 1000, p95Ms: fs && fs.frames > 30 ? fs.p95 : NaN,
+			quality: `${ ( QUALITY[ app.qualityName ] || QUALITY.high ).label } ${ Math.round( app.settings.renderScale * 100 ) }%${ sr ? ` · ${ sr.width }×${ sr.height }` : '' }${ this.tune.running ? ' · measuring' : '' }`,
+		} );
 		this.s.renderScale = app.post.scale;
 
 		const p = app.player;

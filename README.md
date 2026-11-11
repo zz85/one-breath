@@ -146,10 +146,11 @@ Add these to the URL, for example `?fly&noAudio`:
 | `noSim` | Skip the swash (shallow-water) simulation |
 | `hunt` | Practice: start under water by a school of jacks with the gun loaded, calm fish and endless breath. `hunt=barracuda` for another kind (`hunt=list` names them), N for the next school, `__hunt('grunt')` from the console |
 | `dist=3` | With `hunt`: how far from the school (m) |
-| `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, carbon fins), kept in your save |
+| `gear` | With `hunt`: the best gear (110 cm carbon gun, best shaft, reel, carbon fins), kept in your save; it gives exactly the money it costs |
 | `wild` | With `hunt`: wary fish and a real breath-hold |
 | `quality=phone` | The phone preset (lower resolution, smaller shadow map, coarser ocean mesh, no sun shafts or water reflections); `quality=high` the full one. Touch-only devices pick `phone` |
 | `touch` | Touch controls from the start |
+| `tune` | Measure the frame rate at each preset and render scale (about a minute: hold still), show a table and keep the best. Also `__tune()` in the console, or a long press on the frame-rate panel on a touch screen |
 | `scale=0.8` | Internal render scale (0.5 to 1) |
 
 ## Running locally
