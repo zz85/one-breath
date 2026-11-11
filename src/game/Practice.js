@@ -103,7 +103,7 @@ export class Practice {
 		const dx = c.x - best.x, dy = c.y - y, dz = c.z - best.z;
 		p.yaw = Math.atan2( - dx, - dz );
 		p.pitch = Math.atan2( dy, Math.hypot( dx, dz ) );
-		sp.equip( true );
+		if ( sp.allowGun !== false ) sp.equip( true );
 		if ( sp.phase === 'home' ) sp.gun.bandsLoaded = sp.stats.bands;
 		const msg = `${ g.count } ${ name } ${ ( - c.y ).toFixed( 1 ) } m down${ this.on ? '   ·   N  next school' : '' }`;
 		this.game.toast( msg, 3500 );

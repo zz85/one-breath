@@ -4,6 +4,7 @@ import { habitatAt } from './Bites.js';
 import { GameState } from './GameState.js';
 import { Spearfishing } from './Spearfishing.js';
 import { Practice } from './Practice.js';
+import { MODES, DIFFICULTY, pickMode, saveMode } from './Mode.js';
 import { FishStand } from './FishStand.js';
 import { Chandlery } from './Chandlery.js';
 import { CatchDisplay } from './CatchDisplay.js';
@@ -23,6 +24,9 @@ export class Game {
 	constructor( app ) {
 
 		this.app = app;
+		// leisure / depth / spear and the difficulty (game/Mode.js): the URL's or the last choice until
+		// the start screen's menu sets it
+		this.mode = pickMode( app.qs );
 		this.state = new GameState();
 		this.state.load();
 		this.spear = new Spearfishing( this );
@@ -50,10 +54,23 @@ export class Game {
 
 	}
 
+	// the start screen's pick (or the URL's): saved for next time, then applied
+	setMode( choice ) {
+
+		if ( ! choice || ! MODES[ choice.mode ] || MODES[ choice.mode ].locked ) return;
+		this.mode = { mode: choice.mode, difficulty: DIFFICULTY[ choice.difficulty ] ? choice.difficulty : 'standard', fromURL: false };
+		saveMode( this.mode );
+		this.applyGear();
+
+	}
+
 	applyGear() {
 
 		const g = this.state.stats;
 		this.spear.applyGear( g );
+		this.spear.apnea.holdS = g.holdS * ( DIFFICULTY[ this.mode.difficulty ] || DIFFICULTY.standard ).holdMul;
+		this.spear.allowGun = !! ( MODES[ this.mode.mode ] || MODES.spear ).gun;
+		if ( ! this.spear.allowGun && this.spear.equipped && this.spear.phase === 'home' ) this.spear.equip( false );
 		const b = this.app.boatCtl;
 		if ( b && this._engineBase ) {
 

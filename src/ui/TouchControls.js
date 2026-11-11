@@ -279,7 +279,7 @@ export class TouchControls {
 			use: !! prompt && /\bE\b/.test( `${ prompt.key } ${ prompt.text }` ),
 			up: swim || free || p.mode === 'walk' || p.mode === 'deck',
 			dive: swim || free,
-			gun: g.canFish && ( gun || swim || p.surface === 'wetsand' || p.surface === 'water' ),
+			gun: g.canFish && ( gun || sp.allowGun !== false ) && ( gun || swim || p.surface === 'wetsand' || p.surface === 'water' ),
 			cam: helm,
 			bag: true,
 		};

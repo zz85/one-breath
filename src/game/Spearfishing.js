@@ -71,6 +71,8 @@ export class Spearfishing {
 		this.stats = null;
 		// practice mode (?hunt, game/Practice.js): { calm, air } fish that let you close, endless breath
 		this.practice = null;
+		// false in the freediving modes (game/Mode.js): no speargun
+		this.allowGun = true;
 
 	}
 
@@ -227,7 +229,7 @@ export class Spearfishing {
 		if ( this.fish ) this.fish.curious = camUnder && speed < 0.35 && this.phase === 'home' && ! this.loading;
 
 		// ---- equip
-		if ( inp.hit( 'KeyG' ) && can ) {
+		if ( inp.hit( 'KeyG' ) && can && ( this.allowGun || gun.equipped ) ) {
 
 			if ( this.phase === 'fight' ) this.letGo();
 			else if ( this.loose ) this.toast( this.loose.float ? 'Your gun is out on the float line · grab the float (E)' : 'Your gun is out on the fish\'s line · swim to it and grab it (E)', 2400 );
@@ -1197,6 +1199,7 @@ export class Spearfishing {
 		if ( this.phase === 'blackout' ) return null;
 		if ( ! gun.equipped ) {
 
+			if ( ! this.allowGun ) return null;
 			const wet = p.mode === 'swim' || ( p.mode === 'walk' && [ 'wetsand', 'water' ].includes( p.surface ) );
 			return wet ? { key: 'G', text: 'Take out the speargun' } : null;
 

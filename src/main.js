@@ -3,6 +3,7 @@ import './core/BenchSeed.js';
 import { App } from './App.js';
 import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
+import { MODES, DIFFICULTY } from './game/Mode.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -35,8 +36,12 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 		if ( app.qs.has( 'shots' ) ) window.__job = window.__bench.shots( app.qs.get( 'shots' ).split( ',' ), { tag: app.qs.get( 'tag' ) || 'shot', dt: Number( app.qs.get( 'dt' ) ) || 0, seq: Number( app.qs.get( 'seq' ) ) || 1, every: Number( app.qs.get( 'every' ) ) || 1 } );
 
 	} else app.start();
-	ui.showStartOverlay( () => {
+	// the mode menu, unless the URL chose a mode (?mode=, ?hunt)
+	const game = app.game;
+	if ( game && ! game.mode.fromURL ) ui.setModes( MODES, DIFFICULTY, game.mode );
+	ui.showStartOverlay( ( choice ) => {
 
+		if ( game && choice ) game.setMode( choice );
 		app.input.requestLock();
 		if ( app.audio ) app.audio.resume();
 
@@ -45,6 +50,8 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 } ).catch( ( e ) => {
 
 	console.error( e );
-	ui.setLoadingError( 'Something went wrong: ' + e.message );
+	// a shader the GPU refused (most often a phone's lower limits) is the likelier cause: name it
+	const failed = app.gpuFailed && app.gpuFailed();
+	ui.setLoadingError( failed ? `This device's GPU couldn't build ${ failed }. Try ?quality=phone, or a desktop browser.` : 'Something went wrong: ' + e.message );
 
 } );

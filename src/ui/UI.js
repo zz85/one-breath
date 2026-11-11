@@ -2197,6 +2197,8 @@ export class UI {
 				${ brandMark( 'tw-start-mark' ) }
 				<div class="tw-start-title">ONE BREATH</div>
 				<div class="tw-start-sub">Langpao Island</div>
+				<div class="tw-start-modes" role="radiogroup" aria-label="Mode" hidden></div>
+				<div class="tw-start-diff" role="radiogroup" aria-label="Difficulty" hidden></div>
 				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>Click to explore</span></button>
 				<div class="tw-start-keys">
 					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Move</span>
@@ -3187,6 +3189,44 @@ export class UI {
 
 	// Resolves on the first click (or Enter / Space). onStart runs inside that
 	// user gesture, so it may call requestPointerLock().
+	// the mode menu on the start screen: modes { id: { label, blurb, locked } }, difficulties
+	// { id: { label } }, choice { mode, difficulty } preselected. ui.modeChoice holds the pick.
+	setModes( modes, difficulties, choice ) {
+
+		const el = this.startEl;
+		this.modeChoice = { mode: choice.mode, difficulty: choice.difficulty };
+		const M = el.querySelector( '.tw-start-modes' ), D = el.querySelector( '.tw-start-diff' );
+		M.innerHTML = Object.entries( modes ).map( ( [ id, m ] ) =>
+			`<button type="button" class="tw-mode" role="radio" data-mode="${ esc( id ) }"${ m.locked ? ' disabled' : '' }>` +
+			`<span class="tw-mode-name">${ esc( m.label ) }</span><span class="tw-mode-blurb">${ esc( m.blurb ) }</span>` +
+			( m.locked ? `<span class="tw-mode-lock">${ esc( m.locked ) }</span>` : '' ) + '</button>' ).join( '' );
+		D.innerHTML = Object.entries( difficulties ).map( ( [ id, d ] ) =>
+			`<button type="button" class="tw-diff" role="radio" data-diff="${ esc( id ) }">${ esc( d.label ) }</button>` ).join( '' );
+		const mark = () => {
+
+			for ( const b of M.children ) b.setAttribute( 'aria-checked', String( b.dataset.mode === this.modeChoice.mode ) );
+			for ( const b of D.children ) b.setAttribute( 'aria-checked', String( b.dataset.diff === this.modeChoice.difficulty ) );
+
+		};
+		const pick = ( e ) => {
+
+			const b = e.target.closest( '.tw-mode, .tw-diff' );
+			if ( ! b ) return;
+			e.stopPropagation(); // a pick doesn't start the game; the button or Enter does
+			if ( b.disabled ) return;
+			if ( b.dataset.mode ) this.modeChoice.mode = b.dataset.mode;
+			if ( b.dataset.diff ) this.modeChoice.difficulty = b.dataset.diff;
+			mark();
+
+		};
+		M.onclick = pick;
+		D.onclick = pick;
+		M.hidden = D.hidden = false;
+		el.classList.add( 'has-modes' );
+		mark();
+
+	}
+
 	showStartOverlay( onStart ) {
 
 		if ( this._startPromise ) return this._startPromise;
@@ -3209,6 +3249,8 @@ export class UI {
 
 				}
 
+				// with the mode menu, only the start button starts (a click beside a card shouldn't)
+				if ( e.type === 'click' && el.classList.contains( 'has-modes' ) && ! e.target.closest( '.tw-start-cta' ) ) return;
 				el.removeEventListener( 'click', go );
 				window.removeEventListener( 'keydown', go, true );
 				this._start = false;
@@ -3224,7 +3266,7 @@ export class UI {
 				}, 700 );
 				this._overUI = false;
 				this._activity();
-				callHook( onStart );
+				callHook( onStart, this.modeChoice );
 				resolve();
 
 			};
