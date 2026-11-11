@@ -397,6 +397,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 	// the shaders that failed to compile, for the loader's message (null when none did)
 	gpuFailed() {
 
+		if ( GPU.lost ) return null;
 		const f = GPU.failedPipelines;
 		return f.length ? `${ f.length } shader${ f.length > 1 ? 's' : '' } (${ f.slice( 0, 3 ).join( ', ' ) }${ f.length > 3 ? ', ...' : '' })` : null;
 

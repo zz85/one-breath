@@ -1,4 +1,5 @@
 import { migrateSaves } from './core/SaveMigrate.js';
+import { GPU } from './engine/gpu/GPU.js';
 import './core/BenchSeed.js';
 import { App } from './App.js';
 import { UI } from './ui/UI.js';
@@ -52,6 +53,6 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 	console.error( e );
 	// a shader the GPU refused (most often a phone's lower limits) is the likelier cause: name it
 	const failed = app.gpuFailed && app.gpuFailed();
-	ui.setLoadingError( failed ? `This device's GPU couldn't build ${ failed }. Try ?quality=phone, or a desktop browser.` : 'Something went wrong: ' + e.message );
+	ui.setLoadingError( GPU.lost ? 'The GPU stopped while loading (out of memory?). Close other tabs and reload, or add ?quality=phone.' : failed ? `This device's GPU couldn't build ${ failed }. Try ?quality=phone, or a desktop browser.` : 'Something went wrong: ' + e.message );
 
 } );
