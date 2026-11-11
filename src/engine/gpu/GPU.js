@@ -140,6 +140,7 @@ export const GPU = {
 	// run this frame (compute, post) call ready( handle ), which falls back to a synchronous create.
 	_pending: new Set(),
 	syncCompiles: [], // labels of pipelines needed before their async compile finished (diagnostics)
+	failedPipelines: [], // labels of pipelines that failed to compile (the loader reports them)
 
 	renderPipeline( desc ) {
 
@@ -170,6 +171,7 @@ export const GPU = {
 			}, ( e ) => {
 
 				h.failed = true;
+				this.failedPipelines.push( desc.label );
 				console.error( `WebGPU: pipeline "${ desc.label }" failed: ${ e.message.split( '\n' ).slice( 0, 6 ).join( '\n' ) }` );
 
 			} );

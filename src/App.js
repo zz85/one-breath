@@ -379,6 +379,7 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 		// stage weights: in the browser the pipeline compile below takes far longer than everything before it
 		await progress( 0.36, 'Compiling shaders…', 0.95 );
 		await this.precompile();
+		if ( GPU.failedPipelines.length ) throw new Error( 'shaders failed: ' + GPU.failedPipelines.join( ', ' ) );
 		await progress( 0.96, 'Warming up…' );
 		for ( let i = 0; i < 2; i ++ ) {
 
@@ -393,6 +394,14 @@ fn terrainWetness( xz: vec2f, h: f32 ) -> vec2f {
 	// screen). The precompile frame visits every mesh of every pass, hidden or out of view, and the
 	// pipelines compile in parallel in the background (GPU.renderPipeline); the refraction pass and
 	// the hull mask are forced on so their variants are built too.
+	// the shaders that failed to compile, for the loader's message (null when none did)
+	gpuFailed() {
+
+		const f = GPU.failedPipelines;
+		return f.length ? `${ f.length } shader${ f.length > 1 ? 's' : '' } (${ f.slice( 0, 3 ).join( ', ' ) }${ f.length > 3 ? ', ...' : '' })` : null;
+
+	}
+
 	async precompile() {
 
 		const mr = this.engine.meshRenderer;

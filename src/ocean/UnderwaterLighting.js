@@ -48,7 +48,7 @@ export function installUnderwaterLighting( { fft, caustics, clouds = null, terra
 	const T = !! terrain;
 	const S = !! ( shore && terrain );
 	const deps = [ commonModule, surfaceModule, fft.module, terrain && terrain.module, S && shore.module, shoreSim && shoreSim.module,
-		caustics && caustics.module, clouds && clouds.module, surface && surface.attenuationModule ];
+		caustics && caustics.module, surface && surface.attenuationModule ]; // no clouds: the bake doesn't read them (16 textures a shader on phones)
 
 	const C3 = Math.min( 3, fft.cascades ), C2 = Math.min( 2, fft.cascades );
 

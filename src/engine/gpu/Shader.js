@@ -337,6 +337,9 @@ export class BindingSet {
 			const st = stageOf[ this.names[ i ] ];
 			if ( st === 'fragment' && ( l.visibility & GPUShaderStage.FRAGMENT ) ) l.visibility = GPUShaderStage.FRAGMENT;
 			if ( st === 'vertex' && ( l.visibility & GPUShaderStage.VERTEX ) ) l.visibility = GPUShaderStage.VERTEX;
+			// declared (a module's function no entry point calls still names it) but never used:
+			// visible to no stage, so it doesn't count against the per-stage limits
+			if ( st === 'none' ) l.visibility = 0;
 
 		}
 
@@ -346,6 +349,19 @@ export class BindingSet {
 			if ( ! demote.has( this.names[ i ] ) ) continue;
 			d.layout.buffer = { type: 'read-only-storage' };
 			d.decl = d.decl.replace( /^var<uniform>/, 'var<storage, read>' );
+
+		}
+
+		if ( globalThis.__limitsDebug ) {
+
+			const L = GPU.limits || {};
+			for ( const [ bit, st ] of [ [ 1, 'vertex' ], [ 2, 'fragment' ], [ 4, 'compute' ] ] ) {
+
+				const tex = this.names.filter( ( n, i ) => this.described[ i ].layout.texture && ( this.described[ i ].layout.visibility & bit ) );
+				const sto = this.names.filter( ( n, i ) => this.described[ i ].layout.storageTexture && ( this.described[ i ].layout.visibility & bit ) );
+				if ( tex.length > ( L.maxSampledTexturesPerShaderStage || 16 ) || sto.length > ( L.maxStorageTexturesPerShaderStage || 4 ) ) console.warn( 'LIMITS ' + label + ' ' + st + ' tex=' + tex.length + ' [' + tex.join( ',' ) + '] storageTex=' + sto.length );
+
+			}
 
 		}
 
@@ -528,6 +544,7 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 	}
 
 	for ( const k in bindings ) specs[ k ] = bindings[ k ];
+
 	let stageOf = null;
 	let demote = null;
 	if ( stage === 'render' && /@vertex\s+fn\s+vs\b/.test( code ) ) {
@@ -542,7 +559,8 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 		stageOf = {};
 		for ( const k in specs ) {
 
-			if ( ! usedV.has( k ) && ( ! usedF || usedF.has( k ) ) ) stageOf[ k ] = 'fragment';
+			if ( ! usedV.has( k ) && usedF && ! usedF.has( k ) ) stageOf[ k ] = 'none';
+			else if ( ! usedV.has( k ) && ( ! usedF || usedF.has( k ) ) ) stageOf[ k ] = 'fragment';
 			else if ( usedF && ! usedF.has( k ) && usedV.has( k ) ) stageOf[ k ] = 'vertex';
 
 		}
@@ -553,7 +571,7 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 		const limits = GPU.limits || {};
 		const maxU = ( limits.maxUniformBuffersPerShaderStage || 12 ) - 2;
 		const maxS = { vertex: limits.maxStorageBuffersInVertexStage ?? 4, fragment: limits.maxStorageBuffersInFragmentStage ?? limits.maxStorageBuffersPerShaderStage ?? 8 };
-		const inStage = ( k, st ) => ! stageOf[ k ] || stageOf[ k ] === st;
+		const inStage = ( k, st ) => stageOf[ k ] !== 'none' && ( ! stageOf[ k ] || stageOf[ k ] === st );
 		for ( const st of [ 'fragment', 'vertex' ] ) {
 
 			const uniforms = Object.keys( specs ).filter( ( k ) => specs[ k ].uniform && inStage( k, st ) && ! demote.has( k ) );
@@ -572,6 +590,16 @@ export function composeShader( { modules = [], bindings = {}, code = '', defines
 			}
 
 		}
+
+	}
+
+	if ( stage === 'compute' && /@compute[^;{}]*\bfn\s+main\b/.test( code ) ) {
+
+		let all = '';
+		for ( const m of mods ) all += m.code + '\n';
+		const used = reachableIdentifiers( preprocess( all + code, defines ), 'main' );
+		stageOf = {};
+		for ( const k in specs ) if ( ! used.has( k ) ) stageOf[ k ] = 'none';
 
 	}
 
