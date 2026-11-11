@@ -1,0 +1,23 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Start screen</title>
+	<style>body { margin: 0; height: 100vh; overflow: hidden; background: #0b3a4a url(/ui/keyart-720.jpg) center / cover; }</style>
+</head>
+<body>
+<script type="module">
+// Dev / test page: the start screen with the mode menu (ui/UI.js setModes), no game behind it.
+// ?mode=spear preselects; window.__started holds the pick once a button starts it.
+import '../src/ui/ui.css';
+import { UI } from '../src/ui/UI.js';
+import { MODES, DIFFICULTY } from '../src/game/Mode.js';
+
+const qs = new URLSearchParams( location.search );
+const ui = new UI();
+ui.setModes( MODES, DIFFICULTY, { mode: qs.get( 'mode' ) || 'leisure', difficulty: 'standard' } );
+ui.showStartOverlay( ( choice ) => { window.__started = { ...choice }; } );
+</script>
+</body>
+</html>

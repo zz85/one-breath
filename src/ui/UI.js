@@ -2197,8 +2197,8 @@ export class UI {
 				${ brandMark( 'tw-start-mark' ) }
 				<div class="tw-start-title">ONE BREATH</div>
 				<div class="tw-start-sub">Langpao Island</div>
-				<div class="tw-start-modes" role="radiogroup" aria-label="Mode" hidden></div>
 				<div class="tw-start-diff" role="radiogroup" aria-label="Difficulty" hidden></div>
+				<div class="tw-start-modes" hidden></div>
 				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>Click to explore</span></button>
 				<div class="tw-start-keys">
 					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Move</span>
@@ -3189,38 +3189,52 @@ export class UI {
 
 	// Resolves on the first click (or Enter / Space). onStart runs inside that
 	// user gesture, so it may call requestPointerLock().
-	// the mode menu on the start screen: modes { id: { label, blurb, locked } }, difficulties
-	// { id: { label } }, choice { mode, difficulty } preselected. ui.modeChoice holds the pick.
+	// the mode menu on the start screen: one start button per mode, each a copy of the "Click to
+	// explore" button, that starts the game in that mode; a small difficulty switch above them.
+	// modes { id: { label, locked } }, difficulties { id: { label } }, choice { mode, difficulty }:
+	// the last mode played keeps the pulse and starts on Enter. ui.modeChoice holds the pick.
 	setModes( modes, difficulties, choice ) {
 
 		const el = this.startEl;
 		this.modeChoice = { mode: choice.mode, difficulty: choice.difficulty };
+		const cta = el.querySelector( '.tw-start-cta:not([data-mode])' );
 		const M = el.querySelector( '.tw-start-modes' ), D = el.querySelector( '.tw-start-diff' );
-		M.innerHTML = Object.entries( modes ).map( ( [ id, m ] ) =>
-			`<button type="button" class="tw-mode" role="radio" data-mode="${ esc( id ) }"${ m.locked ? ' disabled' : '' }>` +
-			`<span class="tw-mode-name">${ esc( m.label ) }</span><span class="tw-mode-blurb">${ esc( m.blurb ) }</span>` +
-			( m.locked ? `<span class="tw-mode-lock">${ esc( m.locked ) }</span>` : '' ) + '</button>' ).join( '' );
+		const touch = /Tap/.test( cta.textContent );
+		M.replaceChildren( ...Object.entries( modes ).map( ( [ id, m ] ) => {
+
+			const b = cta.cloneNode( true );
+			b.dataset.mode = id;
+			b.querySelector( 'span:last-child' ).textContent = m.label;
+			if ( touch ) b.querySelector( '.tw-ico' )?.remove(); // the mouse icon means nothing on a phone
+			if ( m.locked ) {
+
+				b.disabled = true;
+				b.title = m.locked;
+				b.insertAdjacentHTML( 'beforeend', `<small class="tw-start-soon">${ esc( m.locked ) }</small>` );
+
+			}
+
+			if ( id !== choice.mode ) b.querySelector( '.tw-start-pulse' )?.remove();
+			return b;
+
+		} ) );
+		cta.hidden = true;
 		D.innerHTML = Object.entries( difficulties ).map( ( [ id, d ] ) =>
 			`<button type="button" class="tw-diff" role="radio" data-diff="${ esc( id ) }">${ esc( d.label ) }</button>` ).join( '' );
 		const mark = () => {
 
-			for ( const b of M.children ) b.setAttribute( 'aria-checked', String( b.dataset.mode === this.modeChoice.mode ) );
 			for ( const b of D.children ) b.setAttribute( 'aria-checked', String( b.dataset.diff === this.modeChoice.difficulty ) );
 
 		};
-		const pick = ( e ) => {
+		D.onclick = ( e ) => {
 
-			const b = e.target.closest( '.tw-mode, .tw-diff' );
+			const b = e.target.closest( '.tw-diff' );
+			e.stopPropagation(); // a difficulty pick doesn't start the game
 			if ( ! b ) return;
-			e.stopPropagation(); // a pick doesn't start the game; the button or Enter does
-			if ( b.disabled ) return;
-			if ( b.dataset.mode ) this.modeChoice.mode = b.dataset.mode;
-			if ( b.dataset.diff ) this.modeChoice.difficulty = b.dataset.diff;
+			this.modeChoice.difficulty = b.dataset.diff;
 			mark();
 
 		};
-		M.onclick = pick;
-		D.onclick = pick;
 		M.hidden = D.hidden = false;
 		el.classList.add( 'has-modes' );
 		mark();
@@ -3250,7 +3264,13 @@ export class UI {
 				}
 
 				// with the mode menu, only the start button starts (a click beside a card shouldn't)
-				if ( e.type === 'click' && el.classList.contains( 'has-modes' ) && ! e.target.closest( '.tw-start-cta' ) ) return;
+				if ( e.type === 'click' && el.classList.contains( 'has-modes' ) ) {
+
+					const b = e.target.closest( '.tw-start-cta[data-mode]' );
+					if ( ! b || b.disabled ) return;
+					this.modeChoice.mode = b.dataset.mode;
+
+				}
 				el.removeEventListener( 'click', go );
 				window.removeEventListener( 'keydown', go, true );
 				this._start = false;

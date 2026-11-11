@@ -2493,47 +2493,34 @@ body {
 	display: flex;
 	flex-wrap: wrap;
 	justify-content: center;
-	gap: calc(10 * var(--tw-u));
-	max-width: min(92vw, calc(760 * var(--tw-u)));
-	margin-top: calc(14 * var(--tw-u));
+	gap: calc(12 * var(--tw-u));
+	max-width: min(94vw, calc(820 * var(--tw-u)));
 }
 
-.tw-mode {
-	position: relative;
-	display: flex;
-	flex: 1 1 calc(200 * var(--tw-u));
-	flex-direction: column;
-	gap: calc(6 * var(--tw-u));
-	max-width: calc(240 * var(--tw-u));
-	padding: calc(14 * var(--tw-u)) calc(16 * var(--tw-u));
-	border: 1px solid rgba(255, 255, 255, 0.18);
-	border-radius: calc(14 * var(--tw-u));
+.tw-start-modes .tw-start-cta { cursor: pointer; }
+.tw-start-modes .tw-start-cta:hover:not(:disabled) { transform: translateY(-1px); }
+.tw-start:hover .tw-start-modes .tw-start-cta:not(:hover) { transform: none; }
+
+.tw-start-modes .tw-start-cta:disabled {
+	cursor: default;
 	background: rgba(4, 22, 30, 0.45);
-	backdrop-filter: blur(8px);
-	color: inherit;
-	text-align: left;
-	cursor: pointer;
-	transition: border-color var(--tw-fast), background var(--tw-fast), transform var(--tw-fast) var(--tw-ease);
+	box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+	color: rgba(255, 255, 255, 0.7);
+	transform: none;
 }
 
-.tw-mode:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(var(--tw-aqua-rgb), 0.6); }
-.tw-mode[aria-checked="true"] { border-color: rgb(var(--tw-aqua-rgb)); background: rgba(var(--tw-aqua-rgb), 0.18); }
-.tw-mode:disabled { cursor: default; opacity: 0.55; }
-.tw-mode-name { font-size: var(--tw-fs-lg); font-weight: 600; }
-.tw-mode-blurb { font-size: var(--tw-fs-sm, 13px); line-height: 1.35; opacity: 0.8; }
-
-.tw-mode-lock {
-	position: absolute;
-	top: calc(8 * var(--tw-u));
-	right: calc(10 * var(--tw-u));
+.tw-start-soon {
+	margin-left: calc(4 * var(--tw-u));
 	font-size: 11px;
+	font-weight: 500;
 	letter-spacing: 0.08em;
 	text-transform: uppercase;
-	opacity: 0.85;
+	opacity: 0.8;
 }
 
 .tw-start-diff {
 	display: inline-flex;
+	margin-top: calc(10 * var(--tw-u));
 	gap: 2px;
 	padding: 3px;
 	border-radius: 999px;
@@ -2554,8 +2541,8 @@ body {
 .tw-start.has-modes { cursor: default; }
 
 @media (max-width: 640px) {
-	.tw-mode { flex-basis: 100%; max-width: none; padding: calc(10 * var(--tw-u)) calc(14 * var(--tw-u)); }
-	.tw-mode-blurb { display: none; }
+	.tw-start-modes { flex-direction: column; align-items: stretch; width: min(86vw, 340px); }
+	.tw-start-modes .tw-start-cta { justify-content: center; }
 }
 
 .tw-start-cta {
