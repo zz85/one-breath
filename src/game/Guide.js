@@ -7,10 +7,10 @@ import { CHANDLERY } from './Chandlery.js';
 //    markers pulse on the minimap). Enter / Space / click: next, Esc: skip. Replay from the help (F1).
 //  - one-time tips the first time something happens (gun out, first contractions, a miss, fish on, first catch,
 //    full cooler, next to the boat, at Joe's, at Marta's), in a card above the minimap.
-// Seen state in localStorage ('tidewater.guide'), wrapped in try/catch.
+// Seen state in localStorage ('onebreath.guide'), wrapped in try/catch.
 //   const guide = new Guide( ui, game, minimap );  guide.update( dt );  guide.replay()
 
-const KEY = 'tidewater.guide';
+const KEY = 'onebreath.guide';
 
 const CSS = /* css */`
 .gm-guide { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; opacity: 0; visibility: hidden;
@@ -67,7 +67,7 @@ const row = ( keys, text ) => `<div class="gm-guide-row"><span class="k">${ keys
 
 const CARDS = [
 	{
-		eyebrow: 'Welcome to Tidewater',
+		eyebrow: 'Welcome to One Breath',
 		title: 'Freedive the reef, sell your catch',
 		body: `<p>Swim out from the <b>beach</b> or take your <b>boat</b> to the reef, dive on one breath and hunt with a <b>speargun</b>. Yellowtail school over the reef, grunts and snappers hang around the pier piles, jacks and barracuda patrol the drop-off.</p>
 			<p>Sell your catch to <b>Joe</b> at the fish stand by the pier, then spend the money on gear from <b>Marta</b> at the chandlery by the boathouse: a longer gun, a better shaft, a reel, fins, a freediving course, a bigger hold.</p>`,

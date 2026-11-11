@@ -1,4 +1,4 @@
-# Porting Tidewater from three.js/TSL to raw WebGPU + WGSL
+# Porting One Breath (from Tidewater) from three.js/TSL to raw WebGPU + WGSL
 
 Branch `webgpu-native`. Goal: no `three` import anywhere in `src/`, same look and behaviour as `main`.
 The three.js version (on `main`, and at `../threejs-water-claude`) is the reference: read the original file

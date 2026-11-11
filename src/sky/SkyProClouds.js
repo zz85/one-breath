@@ -5,7 +5,7 @@ import { commonModule } from '../engine/render/wgsl/common.js';
 // Volumetric cumulus from sky-pro-webgpu (../sky-pro-webgpu, "Partly cloudy" preset): procedural
 // weather map, baked 64³ Perlin-Worley shape noise with a height-dependent erosion, a cone-traced
 // light march with three multiple-scattering octaves, powder and base darkening, a quarter-rate
-// lattice trace reconstructed temporally at half resolution. Lit by Tidewater's atmosphere (sun
+// lattice trace reconstructed temporally at half resolution. Lit by the game's atmosphere (sun
 // or moon key light, sky view LUT) instead of sky-pro's own.
 //
 // Same public interface as the previous clouds (sky/Clouds.js):
@@ -40,7 +40,7 @@ const PRESET = {
 		groundBounceAlbedo: [ 0.009134058699157796, 0.015208514418949472, 0.018500220124016652 ],
 		baseShadowStrength: 0.88, baseShadowHeight: 0.13, moonGain: 0.65,
 	},
-	// the preset's 89 m/s drift is a time-lapse; the clouds here drift with Tidewater's wind at a
+	// the preset's 89 m/s drift is a time-lapse; the clouds here drift with the game's wind at a
 	// trade-wind speed (evolution scaled by the same factor)
 	wind: { speed: 12, evolutionSpeed: 60.8 * 12 / 89, skew: 1750 },
 	fade: { hazeDensityScale: 0.62, horizonMeltStart: 25000, horizonMeltEnd: 45000 },
@@ -204,7 +204,7 @@ fn scLightEnergy( opticalDepth: f32, phase: vec3f ) -> f32 {
 	return dot( vec3f( halfT * halfT, halfT * 0.5, quarter * 0.25 ), phase );
 }
 
-// Tidewater's sky (the atmosphere's sky view LUT; the night sky's ambient)
+// the game's sky (the atmosphere's sky view LUT; the night sky's ambient)
 fn scSky( dir: vec3f ) -> vec3f {
 	return atmosphereSkyLuminance( dir ) + frame.skyIrradiance * frame.night;
 }

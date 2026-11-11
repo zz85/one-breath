@@ -1,12 +1,13 @@
-# Tidewater
+# One Breath
 
-An island spearfishing game for the browser (the `spearfishing` branch; `main` is the rod-and-reel
-game). Freedive the reef on one breath, hunt the fish that swim there with a speargun, sell your catch to
+A freediving and spearfishing game for the browser, set on the fictional Langpao Island. It is based on
+[Tidewater](https://github.com/dgreenheck/tidewater) by Dan Greenheck, a rod-and-reel fishing game (MIT
+licence, see `LICENSE`). Freedive the reef on one breath, hunt the fish that swim there with a speargun, sell your catch to
 Joe at the fish stand, and spend it on better gear at Marta's chandlery. Around it is a
 real-time tropical island and ocean: swim the reef, drive the boat out to deep water, and watch a humpback
 breach. It runs directly on WebGPU and WGSL with its own small rendering engine, no framework.
 
-**Play it:** https://dgreenheck.github.io/tidewater/
+**The original Tidewater:** https://dgreenheck.github.io/tidewater/
 
 ![Fishing off the pier at golden hour](docs/screenshot.jpg)
 

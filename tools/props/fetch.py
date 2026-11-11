@@ -1,5 +1,5 @@
 import json, urllib.request, os, sys
-op=urllib.request.build_opener(); op.addheaders=[('User-Agent','tidewater-asset-fetch/1.0')]; urllib.request.install_opener(op)
+op=urllib.request.build_opener(); op.addheaders=[('User-Agent','one-breath-asset-fetch/1.0')]; urllib.request.install_opener(op)
 import pathlib
 OUT=str(pathlib.Path(__file__).parent/'.raw')
 TEX=['weathered_brown_planks','weathered_planks','worn_corrugated_iron','weathered_peeling_timber']

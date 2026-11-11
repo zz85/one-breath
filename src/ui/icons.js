@@ -1,4 +1,4 @@
-// Inline SVG icon set for the Tidewater UI.
+// Inline SVG icon set for the One Breath UI.
 // 24×24 grid, 1.6 px strokes, round joins, currentColor. Unknown names fall back to a dot.
 
 const WAVE_ROW = ( y, a = 2 ) => `<path d="M2 ${y}c1.67 0 1.67-${a} 3.33-${a}s1.67 ${a} 3.34 ${a} 1.66-${a} 3.33-${a} 1.67 ${a} 3.33 ${a} 1.67-${a} 3.34-${a} 1.66 ${a} 3.33 ${a}"/>`;

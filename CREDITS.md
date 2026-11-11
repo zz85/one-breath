@@ -1,5 +1,9 @@
 # Credits
 
+One Breath is based on [Tidewater](https://github.com/dgreenheck/tidewater) by Dan Greenheck
+(Copyright (c) 2026 DRG Software Solutions LLC, MIT licence). Its engine, island, ocean and most of its
+code come from there.
+
 The code in this repository is released under the MIT license (see `LICENSE`). The third-party
 assets below keep their own licences.
 

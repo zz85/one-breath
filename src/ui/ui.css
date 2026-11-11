@@ -1,5 +1,5 @@
 /* ==========================================================================
-   Tidewater UI
+   One Breath UI
    Dark translucent glass over the ocean. Aqua is the interactive accent,
    the warm sun tone marks time, light and "modified" state.
    Every metric scales with --tw-u (≈1px at 720p, 1.25px at 1440p).
@@ -2476,6 +2476,17 @@ body {
 	letter-spacing: 0.42em;
 	line-height: 1.05;
 	text-shadow: 0 2px 30px rgba(0, 0, 0, 0.5);
+}
+
+.tw-start-sub {
+	margin-top: -0.4em;
+	margin-right: -0.32em;
+	font-size: clamp(11px, 1.2vw, 15px);
+	font-weight: 500;
+	letter-spacing: 0.32em;
+	text-transform: uppercase;
+	opacity: 0.75;
+	text-shadow: 0 1px 12px rgba(0, 0, 0, 0.5);
 }
 
 .tw-start-cta {

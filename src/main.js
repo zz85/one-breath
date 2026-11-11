@@ -1,3 +1,4 @@
+import { migrateSaves } from './core/SaveMigrate.js';
 import './core/BenchSeed.js';
 import { App } from './App.js';
 import { UI } from './ui/UI.js';
@@ -11,6 +12,8 @@ if ( /[?&]bench\b/.test( location.search ) ) {
 	window.cancelAnimationFrame = ( id ) => ( clearTimeout( id ), caf( id ) );
 
 }
+
+migrateSaves();
 
 const ui = new UI();
 const app = new App();

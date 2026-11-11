@@ -1,6 +1,6 @@
 import { icon, brandMark } from './icons.js';
 
-// Tidewater UI: settings panel (tabs → folders → controls), HUD, help,
+// One Breath UI: settings panel (tabs → folders → controls), HUD, help,
 // photo mode, start overlay and loader. Plain DOM, no dependencies.
 // All styling lives in ui.css (class prefix `tw-`).
 
@@ -1943,7 +1943,7 @@ export class UI {
 		this.qEl = stats.querySelector( '.tw-stats-q' );
 
 		const brand = h( 'div', 'tw-brand' );
-		brand.innerHTML = `${ brandMark() }<span class="tw-brand-name">TIDEWATER</span>`;
+		brand.innerHTML = `${ brandMark() }<span class="tw-brand-name">ONE BREATH</span>`;
 		this.modeEl = h( 'div', 'tw-mode is-empty', { role: 'status' } );
 		this.modeIco = h( 'span', 'tw-mode-ico' );
 		this.modeText = h( 'span', 'tw-mode-text' );
@@ -2195,7 +2195,8 @@ export class UI {
 		el.innerHTML = `
 			<div class="tw-start-inner">
 				${ brandMark( 'tw-start-mark' ) }
-				<div class="tw-start-title">TIDEWATER</div>
+				<div class="tw-start-title">ONE BREATH</div>
+				<div class="tw-start-sub">Langpao Island</div>
 				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>Click to explore</span></button>
 				<div class="tw-start-keys">
 					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Move</span>
@@ -2591,7 +2592,7 @@ export class UI {
 		let saved = null;
 		try {
 
-			saved = localStorage.getItem( 'tidewater.ui.tab' );
+			saved = localStorage.getItem( 'onebreath.ui.tab' );
 
 		} catch { /* storage unavailable */ }
 
@@ -2647,7 +2648,7 @@ export class UI {
 
 			try {
 
-				localStorage.setItem( 'tidewater.ui.tab', tab.id );
+				localStorage.setItem( 'onebreath.ui.tab', tab.id );
 
 			} catch { /* storage unavailable */ }
 
