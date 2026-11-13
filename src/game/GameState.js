@@ -104,6 +104,18 @@ export class GameState {
 
 	}
 
+	// take one fish out of the cooler to eat it; returns the fish, or null
+	eat( id ) {
+
+		const f = this.inventory.find( ( x ) => x.id === id );
+		if ( ! f ) return null;
+		this.inventory = this.inventory.filter( ( x ) => x !== f );
+		this.save();
+		this.emit();
+		return f;
+
+	}
+
 	release( id ) {
 
 		this.inventory = this.inventory.filter( ( f ) => f.id !== id );

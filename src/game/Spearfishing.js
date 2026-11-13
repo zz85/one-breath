@@ -204,7 +204,10 @@ export class Spearfishing {
 		if ( this.aiming && speed < 0.4 ) effort -= 0.15; // still, waiting for the fish to come in
 		const under = swimming && camUnder && ! app.freeCam && this.phase !== 'blackout';
 		const depth = Math.max( 0, this.waterY - app.camera.position.y );
+		const wasUnder = this.apnea.under;
 		this.apnea.update( dt, { under, depth, effort } );
+		// diving again before resting twice as long as the last dive: this breath-hold runs short
+		if ( under && ! wasUnder && this.apnea._penalty > 0.08 ) this.toast( `Down again after ${ Math.round( this.apnea.surfaceTimeBefore || 0 ) } s · rest 2:1 or this dive runs short`, 3500 );
 		if ( this.practice && this.practice.air ) {
 
 			this.apnea.o2 = 0.21;

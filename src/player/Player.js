@@ -224,7 +224,9 @@ export class Player {
 		const wade = THREE.MathUtils.clamp( depth / 1.2, 0, 1 );
 		this.wade = wade;
 		const sprint = inp.down( 'ShiftLeft' ) || inp.down( 'ShiftRight' );
-		const speed = ( sprint ? 6.2 : 3.0 ) * THREE.MathUtils.lerp( 1, 0.42, wade );
+		// badly hurt from a fall: you limp (FallDamage.limp)
+		const limp = this.fallDamage ? this.fallDamage.limp : 1;
+		const speed = ( sprint && limp > 0.99 ? 6.2 : 3.0 ) * THREE.MathUtils.lerp( 1, 0.42, wade ) * limp;
 		const accel = this.grounded ? 14 : 2.5;
 		const k = 1 - Math.exp( - accel * dt );
 		this.velocity.x += ( wish.x * speed - this.velocity.x ) * k;

@@ -14,6 +14,11 @@ import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
 import { TouchControls } from '../ui/TouchControls.js';
 import { FallDamage } from './FallDamage.js';
+import { FISH } from './FishTable.js';
+
+// health a fish gives when eaten
+export const eatHealth = ( kg ) => Math.min( 40, 8 + 12 * kg );
+const fishName = ( sp ) => ( FISH[ sp ] && FISH[ sp ].name ? FISH[ sp ].name.toLowerCase() : 'fish' );
 
 // The spearfishing game on top of the world (the hunt itself: Spearfishing.js):
 //   G          take out / put away the speargun
@@ -56,6 +61,12 @@ export class Game {
 		// fall damage: cliff falls with gore effects and death → respawn
 		this.fallDamage = new FallDamage();
 		app.player.fallDamage = this.fallDamage;
+		this.fallDamage.onHurt = ( dmg, hp ) => {
+
+			if ( hp < 30 ) this.toast( 'Badly hurt · walk it off slowly, or eat a fish from your cooler (I)', 4500 );
+
+		};
+		this.fallDamage.onDeath = () => setTimeout( () => this.toast( 'You fell to your death. You wake at the village, bruised', 5000 ), 4800 );
 
 	}
 
@@ -135,6 +146,33 @@ export class Game {
 		}
 
 		return l;
+
+	}
+
+	// eat a fish from the cooler: health back by its weight (8 + 12 per kg, at most 40), on land or
+	// aboard only. Returns the health it gave.
+	eatFish( id ) {
+
+		const fd = this.fallDamage, p = this.app.player;
+		if ( p.mode === 'swim' ) {
+
+			this.toast( 'Get out of the water to eat', 2000 );
+			return 0;
+
+		}
+
+		if ( fd.full ) {
+
+			this.toast( 'You\'re not hurt · keep it to sell', 2000 );
+			return 0;
+
+		}
+
+		const f = this.state.eat( id );
+		if ( ! f ) return 0;
+		const got = fd.heal( eatHealth( f.kg ) );
+		this.toast( `You eat the ${ fishName( f.species ) } · +${ Math.round( got ) } health`, 2600 );
+		return got;
 
 	}
 

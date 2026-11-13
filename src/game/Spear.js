@@ -639,6 +639,11 @@ function link( a, b, L, dt ) {
 // way up. CO2 builds with time and effort and brings the urge to breathe, then contractions.
 export const PPO2_BLACKOUT = 0.055; // atm (about 42 mmHg)
 export const PPO2_HYPOXIC = 0.085; // tunnel vision below this
+// Surface interval: freedivers rest at least twice as long as they were down (2:1). Each second
+// under adds 2 s of rest owed; each second at the top pays one off. Diving again before it is paid
+// burns oxygen faster on that dive, up to REST_MAX_PENALTY more when a whole breath-hold is owed.
+export const REST_RATIO = 2;
+export const REST_MAX_PENALTY = 0.6;
 
 export class Apnea {
 
@@ -656,6 +661,23 @@ export class Apnea {
 		this.lastDive = null; // { time, depth } of the dive before
 		this._contraction = 0;
 		this.contractions = 0;
+		this.restDebt = 0; // seconds of surface rest still owed (2 per second under)
+		this.rested = true; // the last surface interval met 2:1
+		this._penalty = 0; // extra O2 use on this dive from the rest owed at its start
+
+	}
+
+	// how much faster O2 goes on a dive started with `debt` seconds of rest owed
+	penaltyFor( debt ) {
+
+		return Math.min( REST_MAX_PENALTY, REST_MAX_PENALTY * debt / ( this.holdS * REST_RATIO ) );
+
+	}
+
+	// the surface interval the last dive asks for, and how far into it you are (0..1)
+	get restNeeded() {
+
+		return this.lastDive ? this.lastDive.time * REST_RATIO : 0;
 
 	}
 
@@ -670,16 +692,20 @@ export class Apnea {
 				this.diveTime = 0;
 				this.maxDepth = 0;
 				this.contractions = 0;
+				this.surfaceTimeBefore = this.surfaceTime;
+				this._penalty = this.penaltyFor( this.restDebt );
+				this.rested = this.restDebt <= 0;
 
 			}
 
 			this.diveTime += dt;
 			this.maxDepth = Math.max( this.maxDepth, depth );
 			// calm, still: 0.21 -> blackout in holdS seconds at the surface's pressure
-			const rate = ( 0.21 - PPO2_BLACKOUT ) / this.holdS * effort;
+			const rate = ( 0.21 - PPO2_BLACKOUT ) / this.holdS * effort * ( 1 + this._penalty );
 			this.o2 = Math.max( 0, this.o2 - rate * dt );
-			this.co2 = Math.min( 1.4, this.co2 + dt * effort / ( this.holdS * 0.9 ) );
+			this.co2 = Math.min( 1.4, this.co2 + dt * effort * ( 1 + this._penalty ) / ( this.holdS * 0.9 ) );
 			this.surfaceTime = 0;
+			this.restDebt += dt * REST_RATIO;
 			// contractions: the diaphragm, every few seconds once the urge is strong
 			if ( this.co2 > 0.6 ) {
 
@@ -698,6 +724,7 @@ export class Apnea {
 
 			if ( this.under ) this.lastDive = { time: this.diveTime, depth: this.maxDepth };
 			this.surfaceTime += dt;
+			this.restDebt = Math.max( 0, this.restDebt - dt );
 			// breathing at the top: O2 back within ~20 s, the CO2 slower (breathe-up)
 			this.o2 += ( 0.21 - this.o2 ) * ( 1 - Math.exp( - dt / 6 ) );
 			this.co2 = Math.max( 0, this.co2 - dt / 18 );

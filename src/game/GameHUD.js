@@ -78,6 +78,8 @@ const CSS = /* css */`
 .gm-log { margin-top: var(--tw-3); color: var(--tw-ink-3); font-size: var(--tw-fs-sm); line-height: 1.5; }
 .gm-row .gm-cm { font-family: var(--tw-mono); color: var(--tw-ink-3); }
 .gm-row.has-cm { grid-template-columns: 1fr auto auto auto auto; }
+.gm-acts { display: flex; gap: var(--tw-1); }
+.gm-mini:disabled { opacity: 0.4; cursor: default; }
 
 /* catch card: full screen. The world dims and blurs; the fish lies side-on in its own studio light
    (FishPortrait, a WebGPU canvas) between the name above and the numbers below */
@@ -386,7 +388,9 @@ export class GameHUD {
 	renderInventory() {
 
 		const s = this.game.state;
-		const rows = s.inventory.map( ( f ) => `<div class="gm-row has-cm"><span>${ FISH[ f.species ].name }${ f.record ? '<small>record</small>' : '' }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><button class="gm-mini" data-release="${ f.id }">Release</button></div>` ).join( '' );
+		const fd = this.game.fallDamage;
+		const hurt = !! fd && ! fd.full;
+		const rows = s.inventory.map( ( f ) => `<div class="gm-row has-cm"><span>${ FISH[ f.species ].name }${ f.record ? '<small>record</small>' : '' }</span><span class="gm-cm">${ f.cm ?? Math.round( fishLengthCm( f.species, f.kg ) ) } cm</span><span class="gm-kg">${ f.kg.toFixed( 2 ) } kg</span><span class="gm-val">$${ f.value }</span><span class="gm-acts"><button class="gm-mini" data-eat="${ f.id }"${ hurt ? '' : ' disabled title="You\'re not hurt"' }>Eat</button><button class="gm-mini" data-release="${ f.id }">Release</button></span></div>` ).join( '' );
 		const logged = Object.entries( s.log ).filter( ( [ k ] ) => FISH[ k ] ).map( ( [ k, v ] ) => `${ FISH[ k ].name }: ${ v.count } caught, best ${ v.bestKg.toFixed( 2 ) } kg · ${ v.bestCm ?? Math.round( fishLengthCm( k, v.bestKg ) ) } cm` ).join( '<br>' );
 		this.inv.innerHTML = `
 			<h2>${ s.upgrades.hold > 0 ? 'Fish hold' : 'Cooler' }</h2>
@@ -396,6 +400,12 @@ export class GameHUD {
 			<div class="gm-foot"><span class="gm-sub">Sell at the fish stand by the pier</span><button class="gm-btn is-ghost" data-close>Close (I)</button></div>`;
 		this.inv.querySelector( '[data-close]' ).onclick = () => this.toggleInventory( false );
 		for ( const b of this.inv.querySelectorAll( '[data-release]' ) ) b.onclick = () => s.release( Number( b.dataset.release ) );
+		for ( const b of this.inv.querySelectorAll( '[data-eat]' ) ) b.onclick = () => {
+
+			this.game.eatFish( Number( b.dataset.eat ) );
+			this.renderInventory();
+
+		};
 
 	}
 

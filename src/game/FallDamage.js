@@ -5,22 +5,29 @@
 //   – a camera shake proportional to the impact
 //   – a red flash and blood-spatter overlay on the HUD (higher falls → more opaque, longer)
 //   – a bone-crack / thud sound (from SoundScape.fallImpact)
-//   – above the lethal threshold: a death sequence — the view tumbles, the screen fades to red,
-//     a "You died" message, then respawn at the nearest safe point
+//   – the damage comes off a health bar (100). At 0 the death sequence runs — the view tumbles,
+//     the screen fades to red, "You died", then respawn at the island start with half health
+//   – health comes back very slowly by walking around (1 per 20 m), or by eating a fish from the
+//     cooler (Game.eatFish)
 //
-// Heights (metres):
-//   0–3    no damage (a normal jump is ~1 m)
-//   3–6    minor damage: a light red flash, short shake
-//   6–10   serious: heavy overlay, longer shake, a limp
-//   10+    lethal: the player dies and respawns
+// Damage: 10 per metre of drop past the first 3 m, so from full health
+//   0–3 m   nothing (a normal jump is ~1 m)
+//   5 m     20     a light red flash, short shake
+//   10 m    70     heavy blood overlay, long shake, a limp
+//   13 m+   100    dead (falls stack: two 8 m falls in a row kill you too)
 //
 // Hooked into Game.update() after Player.update().
 
 import { WORLD } from '../world/WorldLayout.js';
 
 const SAFE_HEIGHT = 3;     // m of free fall before damage starts
-const LETHAL_HEIGHT = 10;  // m fall that kills you
-const DAMAGE_RANGE = LETHAL_HEIGHT - SAFE_HEIGHT; // used to normalise
+const DAMAGE_PER_M = 10;   // health lost per metre past SAFE_HEIGHT
+const MAX_HEALTH = 100;
+const LETHAL_HEIGHT = SAFE_HEIGHT + MAX_HEALTH / DAMAGE_PER_M; // kills from full health (13 m)
+const REGEN_PER_M = 0.05;  // health per metre walked (1 per 20 m: really slow)
+const RESPAWN_HEALTH = 50;
+const LOW_HEALTH = 30;     // below this the screen edges stay red and you limp
+const BAR_SHOW_S = 4;      // the bar stays up this long after a change at full health
 
 // camera shake envelope
 const SHAKE_DURATION = 0.6;  // seconds
@@ -52,6 +59,19 @@ const CSS = /* css */`
 	font: 700 clamp(28px, 5vw, 64px) var(--tw-font, sans-serif); color: rgba(255, 180, 160, 0.9);
 	letter-spacing: 0.04em; text-shadow: 0 0 40px rgba(180, 0, 0, 0.8); z-index: 90; }
 .fd-death span { opacity: 0; transition: opacity 0.6s; }
+.fd-low { background: radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(110, 0, 0, 0.55) 100%); z-index: 79; }
+.fd-hp { position: absolute; right: var(--tw-edge, 16px); top: calc(var(--tw-edge, 16px) + calc(56 * var(--tw-u, 1px)));
+	display: flex; align-items: center; gap: var(--tw-2, 8px); padding: var(--tw-2, 8px) var(--tw-4, 16px); border-radius: 999px;
+	font: 500 var(--tw-fs-md, 14px) var(--tw-font, sans-serif); color: var(--tw-ink, #fff); pointer-events: none;
+	opacity: 0; transform: translateY(-6px); transition: opacity var(--tw-med, 300ms), transform var(--tw-med, 300ms); }
+.fd-hp.is-on { opacity: 1; transform: none; }
+.fd-hp-bar { width: calc(110 * var(--tw-u, 1px)); height: calc(7 * var(--tw-u, 1px)); border-radius: 99px; background: var(--tw-fill-2, rgba(255,255,255,0.15)); overflow: hidden; }
+.fd-hp-bar > span { display: block; height: 100%; width: 100%; border-radius: inherit; background: #5fc46a; transition: width 250ms linear, background 400ms; }
+.fd-hp.is-warn .fd-hp-bar > span { background: var(--tw-sun, #e8b04a); }
+.fd-hp.is-bad .fd-hp-bar > span { background: #d23a2e; }
+.fd-hp.is-bad { color: #ff9a8a; animation: fd-throb 1s ease-in-out infinite; }
+.fd-hp b { font-family: var(--tw-mono, monospace); min-width: 2.2em; text-align: right; }
+@keyframes fd-throb { 50% { transform: scale(1.04); } }
 .fd-death.is-on span { opacity: 1; }
 `;
 
@@ -73,6 +93,11 @@ export class FallDamage {
 		this.fallStart = 0;     // y at the moment they left the ground
 		this.highestY = 0;      // peak y during the fall (in case they jump up first)
 
+		// health
+		this.health = MAX_HEALTH;
+		this._barT = 0;         // keeps the bar on after a change
+		this._lastPos = null;   // for walking regen
+
 		// damage state
 		this.severity = 0;      // 0–1, how bad the last impact was (0 = none, 1 = lethal)
 		this.dead = false;
@@ -91,6 +116,10 @@ export class FallDamage {
 		this.redEl = null;
 		this.splatterEl = null;
 		this.deathEl = null;
+		this.lowEl = null;
+		this.hpEl = null;
+		this.onDeath = null;    // callbacks (Game: toasts)
+		this.onHurt = null;
 		this._cssAdded = false;
 
 	}
@@ -110,7 +139,11 @@ export class FallDamage {
 		this.redEl = h( 'div', 'fd-gore fd-red' );
 		this.splatterEl = h( 'div', 'fd-gore fd-splatter' );
 		this.deathEl = h( 'div', 'fd-gore fd-death', '<span>YOU DIED</span>' );
-		root.append( this.redEl, this.splatterEl, this.deathEl );
+		this.lowEl = h( 'div', 'fd-gore fd-low' );
+		this.hpEl = h( 'div', 'fd-hp tw-glass', '<span>Health</span><span class="fd-hp-bar"><span></span></span><b>100</b>' );
+		this.hpBar = this.hpEl.querySelector( '.fd-hp-bar > span' );
+		this.hpNum = this.hpEl.querySelector( 'b' );
+		root.append( this.lowEl, this.redEl, this.splatterEl, this.deathEl, this.hpEl );
 
 	}
 
@@ -141,20 +174,50 @@ export class FallDamage {
 		this.tracking = false;
 		const drop = this.highestY - y;
 		if ( drop < SAFE_HEIGHT ) return;
+		this.damage( ( drop - SAFE_HEIGHT ) * DAMAGE_PER_M, player, audio );
 
-		// severity: 0 at SAFE_HEIGHT, 1 at LETHAL_HEIGHT, >1 above (clamped for effects)
-		const raw = ( drop - SAFE_HEIGHT ) / DAMAGE_RANGE;
-		this.severity = Math.min( raw, 1 );
+	}
 
-		if ( raw >= 1 ) {
+	// take `amount` off the health bar, with the effects of a hit that size
+	damage( amount, player, audio ) {
 
-			this.die( player, audio );
-
-		} else {
+		if ( this.dead || amount <= 0 ) return;
+		this.lastDamage = amount;
+		this.health = Math.max( 0, this.health - amount );
+		this._barT = BAR_SHOW_S;
+		// effects scale with the hit: 70 (a 10 m fall) is the full splatter
+		this.severity = Math.min( 1, amount / 70 );
+		if ( this.health <= 0 ) this.die( player, audio );
+		else {
 
 			this.impact( player, audio );
+			if ( this.onHurt ) this.onHurt( amount, this.health );
 
 		}
+
+	}
+
+	// health back (eating, first aid); returns what it actually added
+	heal( amount ) {
+
+		if ( this.dead ) return 0;
+		const before = this.health;
+		this.health = Math.min( MAX_HEALTH, this.health + Math.max( 0, amount ) );
+		if ( this.health !== before ) this._barT = BAR_SHOW_S;
+		return this.health - before;
+
+	}
+
+	get full() {
+
+		return this.health >= MAX_HEALTH;
+
+	}
+
+	// 1 healthy .. 0.55 at the edge of death: how fast you can walk
+	get limp() {
+
+		return this.health >= LOW_HEALTH ? 1 : 0.55 + 0.45 * this.health / LOW_HEALTH;
 
 	}
 
@@ -202,6 +265,7 @@ export class FallDamage {
 
 		// sound
 		if ( audio && audio.fallImpact ) audio.fallImpact( 1 );
+		if ( this.onDeath ) this.onDeath();
 
 	}
 
@@ -211,6 +275,8 @@ export class FallDamage {
 
 		this.updateGore( dt );
 		this.updateShake( dt, player );
+		this.updateRegen( player );
+		this.updateBar( dt );
 
 		if ( this.dead ) {
 
@@ -255,6 +321,8 @@ export class FallDamage {
 					this.dead = false;
 					this.respawning = false;
 					this.severity = 0;
+					this.health = RESPAWN_HEALTH;
+					this._barT = BAR_SHOW_S;
 					this.goreAlpha = 0;
 					player.frozen = false;
 					if ( this.deathEl ) {
@@ -308,6 +376,38 @@ export class FallDamage {
 
 	}
 
+	// walking around slowly mends you: health for each metre walked on your feet
+	updateRegen( player ) {
+
+		const p = player.position;
+		const walking = player.mode === 'walk' && player.grounded && ! this.dead;
+		if ( walking && this._lastPos && this.health < MAX_HEALTH ) {
+
+			const d = Math.hypot( p.x - this._lastPos.x, p.z - this._lastPos.z );
+			// a respawn or teleport isn't a walk
+			if ( d < 2 ) this.health = Math.min( MAX_HEALTH, this.health + d * REGEN_PER_M );
+
+		}
+
+		this._lastPos = walking ? { x: p.x, z: p.z } : null;
+
+	}
+
+	updateBar( dt ) {
+
+		this._barT = Math.max( 0, this._barT - dt );
+		if ( ! this.hpEl ) return;
+		const hp = this.health;
+		this.hpEl.classList.toggle( 'is-on', hp < MAX_HEALTH || this._barT > 0 );
+		this.hpEl.classList.toggle( 'is-warn', hp < 60 && hp >= LOW_HEALTH );
+		this.hpEl.classList.toggle( 'is-bad', hp < LOW_HEALTH );
+		this.hpBar.style.width = `${ hp / MAX_HEALTH * 100 }%`;
+		this.hpNum.textContent = String( Math.ceil( hp ) );
+		// badly hurt: the screen edges stay red
+		if ( this.lowEl ) this.lowEl.style.opacity = this.dead ? '0' : ( Math.max( 0, 1 - hp / LOW_HEALTH ) * 0.9 ).toFixed( 3 );
+
+	}
+
 	updateShake( dt, player ) {
 
 		if ( this.shakeT <= 0 ) return;
@@ -353,5 +453,8 @@ export class FallDamage {
 	// ---- for tests: the thresholds
 	static get SAFE_HEIGHT() { return SAFE_HEIGHT; }
 	static get LETHAL_HEIGHT() { return LETHAL_HEIGHT; }
+	static get MAX_HEALTH() { return MAX_HEALTH; }
+	static get RESPAWN_HEALTH() { return RESPAWN_HEALTH; }
+	static get REGEN_PER_M() { return REGEN_PER_M; }
 
 }

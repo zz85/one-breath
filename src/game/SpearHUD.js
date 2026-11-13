@@ -17,6 +17,8 @@ const CSS = /* css */`
 .sp-depth small { font-size: 0.45em; color: var(--tw-ink-3); margin-left: 2px; }
 .sp-col { display: flex; flex-direction: column; gap: 3px; font-family: var(--tw-mono); font-size: var(--tw-fs-sm); color: var(--tw-ink-2); }
 .sp-col b { color: var(--tw-ink); font-weight: 600; }
+.sp-col i { font-style: normal; }
+.sp-col b.is-owed { color: var(--tw-sun); }
 .sp-urge { display: flex; flex-direction: column; gap: 4px; width: calc(120 * var(--tw-u)); font-size: var(--tw-fs-sm); color: var(--tw-ink-3); }
 .sp-urge-bar { height: calc(5 * var(--tw-u)); border-radius: 99px; background: var(--tw-fill-2); overflow: hidden; }
 .sp-urge-bar > span { display: block; height: 100%; width: 0; border-radius: inherit; background: var(--tw-aqua); transition: width 200ms linear, background 400ms; }
@@ -69,13 +71,14 @@ export class SpearHUD {
 		this._cue = '';
 		this.watch = h( 'div', 'sp-watch tw-glass', `
 			<div class="sp-depth">0.0<small>m</small></div>
-			<div class="sp-col"><span>DIVE <b class="sp-time">0:00</b></span><span>MAX <b class="sp-max">0.0 m</b></span><span>SURF <b class="sp-si">0:00</b></span></div>
+			<div class="sp-col"><span>DIVE <b class="sp-time">0:00</b></span><span>MAX <b class="sp-max">0.0 m</b></span><span><i class="sp-si-l">SURF</i> <b class="sp-si">0:00</b></span></div>
 			<div class="sp-urge"><span class="sp-urge-label">Breath</span><span class="sp-urge-bar"><span></span></span></div>
 			<div class="sp-gun"><span class="sp-pips"></span><span class="sp-shaft">shaft in</span></div>` );
 		this.depthEl = this.watch.querySelector( '.sp-depth' );
 		this.timeEl = this.watch.querySelector( '.sp-time' );
 		this.maxEl = this.watch.querySelector( '.sp-max' );
 		this.siEl = this.watch.querySelector( '.sp-si' );
+		this.siLabel = this.watch.querySelector( '.sp-si-l' );
 		this.urgeEl = this.watch.querySelector( '.sp-urge' );
 		this.urgeLabel = this.watch.querySelector( '.sp-urge-label' );
 		this.urgeBar = this.watch.querySelector( '.sp-urge-bar > span' );
@@ -110,12 +113,16 @@ export class SpearHUD {
 		this.depthEl.firstChild.textContent = ( under ? depth : 0 ).toFixed( 1 );
 		this.timeEl.textContent = mmss( under ? apnea.diveTime : apnea.lastDive ? apnea.lastDive.time : 0 );
 		this.maxEl.textContent = `${ ( under ? apnea.maxDepth : apnea.lastDive ? apnea.lastDive.depth : 0 ).toFixed( 1 ) } m`;
-		this.siEl.textContent = mmss( under ? 0 : apnea.surfaceTime );
+		// at the top: the rest still owed by the 2:1 rule counts down, then the surface interval
+		const owed = ! under && apnea.restDebt > 0.5;
+		this.siLabel.textContent = owed ? 'REST' : 'SURF';
+		this.siEl.textContent = owed ? mmss( Math.ceil( apnea.restDebt ) ) : mmss( under ? 0 : apnea.surfaceTime );
+		this.siEl.classList.toggle( 'is-owed', owed );
 		const u = apnea.urge;
 		this.urgeBar.style.width = `${ Math.max( 0, 1 - u ) * 100 }%`;
 		this.urgeEl.classList.toggle( 'is-warn', u > 0.45 && u <= 0.7 );
 		this.urgeEl.classList.toggle( 'is-bad', u > 0.7 );
-		this.urgeLabel.textContent = ! under ? ( u > 0.3 ? 'Breathe up…' : 'Breath' ) : u > 0.7 ? 'Contractions · go up' : u > 0.45 ? 'The urge to breathe' : 'Breath';
+		this.urgeLabel.textContent = ! under ? ( owed ? 'Rest 2:1 before diving' : u > 0.3 ? 'Breathe up…' : 'Breath' ) : u > 0.7 ? 'Contractions · go up' : u > 0.45 ? 'The urge to breathe' : 'Breath';
 
 		this.gunEl.classList.toggle( 'is-off', ! gun );
 		if ( gun ) {
