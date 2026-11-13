@@ -13,6 +13,7 @@ import { GameHUD } from './GameHUD.js';
 import { Minimap } from './Minimap.js';
 import { Guide } from './Guide.js';
 import { TouchControls } from '../ui/TouchControls.js';
+import { FallDamage } from './FallDamage.js';
 
 // The spearfishing game on top of the world (the hunt itself: Spearfishing.js):
 //   G          take out / put away the speargun
@@ -51,6 +52,10 @@ export class Game {
 		this.state.onChange( () => this.applyGear() );
 		// ?hunt: straight to the fish (game/Practice.js)
 		this.practice = new Practice( this );
+
+		// fall damage: cliff falls with gore effects and death → respawn
+		this.fallDamage = new FallDamage();
+		app.player.fallDamage = this.fallDamage;
 
 	}
 
@@ -170,6 +175,8 @@ export class Game {
 			ui.onReplayGuide = () => this.guide.replay();
 			// phones and tablets: a stick, look by dragging, buttons (on at the first touch)
 			this.touch = new TouchControls( { app, game: this, root: ui.root } );
+			// fall damage gore overlays
+			this.fallDamage.attach( ui.hud || ui.root );
 
 		}
 
@@ -216,6 +223,9 @@ export class Game {
 		if ( this.minimap ) this.minimap.update( dt );
 		if ( this.guide ) this.guide.update( dt );
 		if ( this.touch ) this.touch.update( dt );
+
+		// fall damage: gore overlays, camera shake, death sequence (after Player.update sets the camera)
+		this.fallDamage.update( dt, p, app.audio );
 
 	}
 

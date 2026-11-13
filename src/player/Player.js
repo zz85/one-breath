@@ -94,6 +94,9 @@ export class Player {
 		this.tug = new THREE.Vector3();
 		this.swimMul = 1;
 		this.frozen = false;
+		// fall damage: set from Game after construction
+		this.fallDamage = null;
+		this._wasGrounded = true; // last frame's grounded state, for detecting takeoff / landing
 
 	}
 
@@ -215,6 +218,7 @@ export class Player {
 		const m = inp.move( _mv );
 		const wish = new THREE.Vector3().addScaledVector( _fwd, m.y ).addScaledVector( _right, m.x );
 		if ( wish.lengthSq() > 1 ) wish.normalize();
+		if ( this.frozen ) wish.set( 0, 0, 0 );
 
 		const depth = this.waterH - this.position.y; // water depth at the feet
 		const wade = THREE.MathUtils.clamp( depth / 1.2, 0, 1 );
@@ -226,7 +230,7 @@ export class Player {
 		this.velocity.x += ( wish.x * speed - this.velocity.x ) * k;
 		this.velocity.z += ( wish.z * speed - this.velocity.z ) * k;
 
-		if ( this.grounded && inp.hit( 'Space' ) && depth < 0.9 ) {
+		if ( this.grounded && ! this.frozen && inp.hit( 'Space' ) && depth < 0.9 ) {
 
 			this.velocity.y = 4.6;
 			this.grounded = false;
@@ -251,6 +255,30 @@ export class Player {
 		} else {
 
 			this.grounded = p.y - g < 0.06;
+
+		}
+
+		// fall damage tracking: detect takeoff and landing
+		if ( this.fallDamage ) {
+
+			if ( this._wasGrounded && ! this.grounded ) {
+
+				// just left the ground
+				this.fallDamage.beginFall( p.y );
+
+			} else if ( ! this._wasGrounded && this.grounded ) {
+
+				// just landed
+				this.fallDamage.land( p.y, this, this.audio );
+
+			} else if ( ! this.grounded ) {
+
+				// still airborne
+				this.fallDamage.airborne( p.y );
+
+			}
+
+			this._wasGrounded = this.grounded;
 
 		}
 

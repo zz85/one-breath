@@ -321,6 +321,57 @@ export class SoundScape {
 
 	}
 
+	// fall impact: a synthesised low thud + bone-crack snap (severity 0..1)
+	fallImpact( severity = 0.5 ) {
+
+		const c = this.ctx;
+		if ( ! c || this._muted ) return;
+		const now = c.currentTime + 0.003;
+		const vol = 0.15 + 0.35 * severity;
+
+		// low thud: short burst of filtered noise
+		const dur = 0.12 + 0.1 * severity;
+		const bufLen = Math.ceil( c.sampleRate * dur );
+		const buf = c.createBuffer( 1, bufLen, c.sampleRate );
+		const data = buf.getChannelData( 0 );
+		for ( let i = 0; i < bufLen; i ++ ) data[ i ] = ( Math.random() * 2 - 1 ) * Math.exp( - i / ( bufLen * 0.15 ) );
+		const src = c.createBufferSource();
+		src.buffer = buf;
+		const lp = c.createBiquadFilter();
+		lp.type = 'lowpass';
+		lp.frequency.setValueAtTime( 120 + 80 * severity, now );
+		lp.frequency.exponentialRampToValueAtTime( 60, now + dur );
+		lp.Q.value = 1.2;
+		const gain = c.createGain();
+		gain.gain.setValueAtTime( vol, now );
+		gain.gain.exponentialRampToValueAtTime( 0.001, now + dur );
+		src.connect( lp ).connect( gain ).connect( this.master || c.destination );
+		src.start( now );
+
+		// crack: a short high-frequency snap on top
+		if ( severity > 0.3 ) {
+
+			const crackDur = 0.04 + 0.03 * severity;
+			const crackLen = Math.ceil( c.sampleRate * crackDur );
+			const crackBuf = c.createBuffer( 1, crackLen, c.sampleRate );
+			const crackData = crackBuf.getChannelData( 0 );
+			for ( let i = 0; i < crackLen; i ++ ) crackData[ i ] = ( Math.random() * 2 - 1 ) * Math.exp( - i / ( crackLen * 0.08 ) );
+			const crackSrc = c.createBufferSource();
+			crackSrc.buffer = crackBuf;
+			const hp = c.createBiquadFilter();
+			hp.type = 'highpass';
+			hp.frequency.value = 2000 + 1500 * severity;
+			hp.Q.value = 0.7;
+			const crackGain = c.createGain();
+			crackGain.gain.setValueAtTime( vol * 0.6 * severity, now );
+			crackGain.gain.exponentialRampToValueAtTime( 0.001, now + crackDur );
+			crackSrc.connect( hp ).connect( crackGain ).connect( this.master || c.destination );
+			crackSrc.start( now + 0.005 );
+
+		}
+
+	}
+
 	engineStart() {
 
 		this._engineOn = true;
