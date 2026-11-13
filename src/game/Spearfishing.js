@@ -28,6 +28,9 @@ const _pull = { x: 0, y: 0, z: 0 };
 //              tires it at the surface; hold LMB on the float line to pull it in from the top
 // Every dive is a breath-hold (Spear.js Apnea): the urge to breathe, contractions, tunnel vision,
 // and a blackout if you push it, most likely on the way up.
+// a left click with the gun down: how long the gun takes to come up to the eye before it shoots (s)
+const AIM_UP_S = 0.25;
+
 export class Spearfishing {
 
 	constructor( game ) {
@@ -236,7 +239,7 @@ export class Spearfishing {
 			else {
 
 				this.equip( ! gun.equipped );
-				this.toast( gun.equipped ? ( gun.bandsLoaded ? 'Speargun out · hold right mouse to aim' : 'Speargun out · hold R to load the bands' ) : 'Speargun away', 1800 );
+				this.toast( gun.equipped ? ( gun.bandsLoaded ? 'Speargun out · hold the left button to aim, let go to shoot' : 'Speargun out · hold R to load the bands' ) : 'Speargun away', 1800 );
 
 			}
 
@@ -283,7 +286,27 @@ export class Spearfishing {
 		}
 
 		if ( ! gun.equipped ) this.aimLatched = false;
-		this.aiming = act && ( ( inp.rightDown && inp.enabled ) || this.aimLatched ) && this.phase === 'home';
+		// the left button alone also works (a trackpad, one-button players): press raises the gun to
+		// the eye, release shoots; a quick click shoots once the gun is up (AIM_UP_S). With the gun
+		// already up (right button or Q) a press shoots at once, as before.
+		const raised = act && ( ( inp.rightDown && inp.enabled ) || this.aimLatched ) && this.phase === 'home';
+		if ( act && lDown && this.phase === 'home' ) {
+
+			const ready = gun.bandsLoaded > 0 && gun.muzzle.y <= this.waterY - 0.08;
+			if ( raised || ! ready ) this.fire(); // fire() says why it can't shoot
+			else this._press = { t: 0, released: false };
+
+		}
+
+		if ( this._press && ( ! act || this.phase !== 'home' ) ) this._press = null;
+		if ( this._press ) {
+
+			this._press.t += dt;
+			if ( ! lHeld ) this._press.released = true;
+
+		}
+
+		this.aiming = raised || !! this._press;
 		// down the shaft the view turns slower: fine aim with a mouse, a trackpad or a finger
 		inp.lookScale = this.aiming ? 0.45 : 1;
 		this.loading = act && rHeld && this.phase === 'home' && gun.bandsLoaded < this.stats.bands;
@@ -302,7 +325,13 @@ export class Spearfishing {
 
 		} else gun.loadT = Math.max( 0, gun.loadT - dt * 2 ); // let go half way: the band slips back
 
-		if ( act && lDown && this.phase === 'home' ) this.fire();
+		if ( this._press && this._press.released && this._press.t >= AIM_UP_S ) {
+
+			this._press = null;
+			this.fire();
+
+		}
+
 		const holdingFloat = !! ( this.loose && this.loose.float && this.loose.float.held );
 		const hauling = act && lHeld && ( this.phase === 'out' || this.phase === 'fight' || holdingFloat );
 		gun.state = this.loading ? 'loading' : this.aiming ? 'aim' : hauling || this.phase === 'fight' ? 'haul' : 'idle';
@@ -1251,7 +1280,7 @@ export class Spearfishing {
 				if ( this.loading ) return { key: 'R', text: 'Pulling the band back to its fin…' };
 				if ( p.mode !== 'swim' ) return { key: 'G', text: 'Get in the water to hunt   ·   G  put the gun away' };
 				if ( this.aiming ) return { key: 'LMB', text: 'Shoot   ·   Q  lower the gun' };
-				return { key: 'RMB', text: 'Hold to aim (or Q)   ·   LMB  shoot   ·   G  put the gun away' };
+				return { key: 'Hold LMB', text: 'Aim, let go to shoot   ·   G  put the gun away' };
 
 			}
 

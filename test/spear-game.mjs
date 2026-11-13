@@ -558,5 +558,40 @@ function shootAt( W, { upgrades = {} } = {} ) {
 
 }
 
+// ---- the left button alone (a trackpad, no right button, no Q): hold to aim, let go to shoot
+{
+
+	const W = makeWorld( [ { name: 'jack', model: 'jack', L: 0.55, p: [ 0, - 6.05, - 6 ], h: [ 1, 0, 0 ], speed: 0 } ] );
+	const { sp, input } = W;
+	input._hit.add( 'KeyG' );
+	W.frame();
+	sp.gun.bandsLoaded = sp.stats.bands;
+	W.frame( 1 / 60, { lmb: true } );
+	ok( sp.phase === 'home' && sp.aiming, 'a left press with the gun down raises it, and doesn\'t shoot yet' );
+	W.run( 1, { lmb: true } );
+	ok( sp.phase === 'home' && sp.aiming && sp.gun.state === 'aim', 'held: the gun stays up at the eye' );
+	W.frame( 1 / 60, { lmb: false } );
+	ok( sp.phase === 'flying', `let go: it shoots (${ sp.phase })` );
+
+	// a quick click: the gun comes up, then shoots
+	const W2 = makeWorld( [] );
+	W2.input._hit.add( 'KeyG' );
+	W2.frame();
+	W2.sp.gun.bandsLoaded = W2.sp.stats.bands;
+	W2.frame( 1 / 60, { lmb: true } );
+	W2.frame( 1 / 60, { lmb: false } );
+	ok( W2.sp.phase === 'home' && W2.sp.aiming, 'a quick click: the gun comes up first' );
+	W2.run( 0.3 );
+	ok( W2.sp.phase === 'flying', `then shoots, aimed (${ W2.sp.phase })` );
+
+	// not loaded: the press says so at once, nothing waits
+	const W3 = makeWorld( [] );
+	W3.input._hit.add( 'KeyG' );
+	W3.frame();
+	W3.frame( 1 / 60, { lmb: true } );
+	ok( ! W3.sp._press && W3.toasts.some( ( t ) => /Not loaded/.test( t ) ), 'unloaded: "Not loaded" at once' );
+
+}
+
 console.log( fails ? `${ fails } failed` : 'all passed' );
 process.exit( fails ? 1 : 0 );

@@ -2158,7 +2158,7 @@ export class UI {
 						${ row( k( 'R' ), 'Load a band<small>Hold; two pulls for two bands</small>' ) }
 						${ row( k( 'RMB' ), 'Aim<small>Hold: the gun comes up to your eye</small>' ) }
 						${ row( k( 'Q' ), 'Aim on / off<small>For a trackpad</small>' ) }
-						${ row( k( 'LMB' ), 'Shoot, haul the line<small>Hold to haul; E grabs the fish</small>' ) }
+						${ row( k( 'LMB' ), 'Aim and shoot, haul the line<small>Hold to aim, let go to shoot; hold again to haul; E grabs the fish</small>' ) }
 						${ row( k( 'I' ), 'Cooler and fish log' ) }
 						${ row( k( 'F' ), 'Free camera' ) }
 						${ row( k( 'T' ), 'Pause time' ) }

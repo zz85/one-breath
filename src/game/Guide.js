@@ -79,7 +79,7 @@ const CARDS = [
 			${ row( k( 'G' ), 'Take out the speargun' ) }
 			${ row( k( 'Hold', 'R' ), 'Pull a band back to the shaft (two pulls for a two-band gun)' ) }
 			${ row( k( 'C' ), 'Dive (or look down and swim). <kbd>Space</kbd> back up' ) }
-			${ row( k( 'Hold', 'RMB' ), 'Aim down the shaft (or <kbd>Q</kbd> to raise / lower it). Glide in slowly: fish bolt from a fast diver' ) }
+			${ row( k( 'Hold', 'LMB' ), 'Aim down the shaft, let go to shoot (the right button or <kbd>Q</kbd> raise it too). Glide in slowly: fish bolt from a fast diver' ) }
 			${ row( k( 'LMB' ), 'Shoot, <b>within about three gun lengths</b>. Behind the eye is a stone shot' ) }
 			${ row( k( 'Hold', 'LMB' ), 'Haul the line in. A big fish runs: <b>ease off when it pulls hard</b>, or the shaft tears out' ) }
 			${ row( k( 'G' ), 'With a big fish on, <b>let go of the gun</b>. On a float line, pull it in from the surface' ) }
@@ -104,7 +104,7 @@ const CARDS = [
 ];
 
 const TIPS = {
-	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly and hold the <b>right mouse button</b> to aim (on a trackpad, <kbd>Q</kbd>).',
+	gunOut: 'Hold <kbd>R</kbd> to pull a band back. Then dive (<kbd>C</kbd>), glide in slowly, then <b>hold the left button</b> to aim and let go to shoot.',
 	contractions: 'Those are <b>contractions</b>: your body asking for air. Head up now, the oxygen runs out fastest on the way up.',
 	fishOn: 'A big one, and it\'s running. <b>Hold the left mouse button</b> to haul, and let go when it pulls hard or the shaft tears out. Short of breath? <kbd>G</kbd> lets go of the gun: on a <b>float line</b> the float tires it while you go up, then grab the float and pull it in from the top.',
 	holed: 'It <b>holed up</b> in the reef and wedged itself in with its fins. Pulling only tears the shaft out. Let it be (<kbd>G</kbd> lets go of the gun), go up for air, then dive back and reach in (<kbd>E</kbd>) once it calms down.',
@@ -126,6 +126,7 @@ export function touchTip( html ) {
 		.replace( /<b>Hold the left mouse button<\/b>/g, '<b>Hold Fire</b>' )
 		.replace( /(Hold|hold) the <b>left mouse button<\/b>/g, '$1 <b>Fire</b>' )
 		.replace( /the <b>left mouse button<\/b>/g, '<b>Fire</b>' )
+		.replace( /<b>hold the left button<\/b> to aim/g, '<b>hold Fire</b> to aim' )
 		.replace( /(hold )?the <b>right mouse button<\/b> to aim/g, 'tap <b>Aim</b>' )
 		.replace( / \(on a trackpad, <kbd>Q<\/kbd>\)/g, '' )
 		.replace( /click to strike|click/g, 'tap' )
