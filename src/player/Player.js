@@ -1,6 +1,7 @@
 import * as THREE from '../engine/index.js';
 import { WORLD } from '../world/WorldLayout.js';
 import { HOUSE } from '../world/boat/Wheelhouse.js';
+import { DUCK } from '../game/Diver.js';
 
 const HOUSE_HELM = { x: HOUSE.helmX, z: HOUSE.seatZ };
 
@@ -84,6 +85,9 @@ export class Player {
 		// own body, the way the freediving photos look); `eye` is where your eyes are either way
 		this.swimCam = 'first';
 		this.swimDist = 3.4;
+		// a duck dive from the surface (seconds into it, or null): the body's weight takes you down
+		// through game/Diver.js's DUCK sequence, with no input until the fins are under; Space aborts
+		this.duck = null;
 		this.swimCamInit = false;
 		this.eye = new THREE.Vector3();
 
@@ -396,15 +400,43 @@ export class Player {
 
 		const sprint = inp.down( 'ShiftLeft' ) || inp.down( 'ShiftRight' );
 		const speed = ( sprint ? 2.5 : 1.5 ) * this.swimMul;
-		const k = 1 - Math.exp( - dt * 3.0 );
+		let k = 1 - Math.exp( - dt * 3.0 );
 		if ( this.frozen ) wish.set( 0, 0, 0 );
-		this.velocity.lerp( wish.multiplyScalar( speed ), k );
 
 		// A swimmer at the surface floats with the head riding the waves; one who dives stays where
 		// they swim to (neutral buoyancy, nothing pulls them back up) until they swim up to the
 		// surface again.
 		const eyeTarget = surfaceY - SWIM_EYE + 0.1; // eyes ~10 cm above the water; waves still wash over
-		const diving = inp.down( 'KeyC' ) || ( m.y > 0.3 && this.pitch < - 0.35 ) || wish.y < - 0.1;
+		let diving = inp.down( 'KeyC' ) || ( m.y > 0.3 && this.pitch < - 0.35 ) || wish.y < - 0.1;
+		// from the surface, a dive is a duck dive: glide, jackknife, legs up, one arm pull, equalize
+		if ( diving && this.floating && atSurface && this.duck === null && ! this.frozen ) this.duck = 0;
+		if ( this.duck !== null ) {
+
+			this.duck += dt;
+			if ( this.duck >= DUCK.end || this.frozen || ( inp.down( 'Space' ) && this.duck > 0.3 ) ) this.duck = null;
+
+		}
+
+		if ( this.duck !== null ) {
+
+			const D = this.duck;
+			diving = true;
+			// the body moves itself: a glide ahead, the fold, then the legs' weight and the pull
+			// take you down; no kicking until the blades are under
+			wish.set( 0, 0, 0 );
+			_v2.set( - Math.sin( this.yaw ), 0, - Math.cos( this.yaw ) );
+			if ( D < DUCK.glide ) wish.addScaledVector( _v2, 0.9 );
+			else if ( D < DUCK.knife ) wish.addScaledVector( _v2, 0.4 ).setY( - 0.5 );
+			else if ( D < DUCK.legs ) wish.setY( - 0.9 );
+			else if ( D < DUCK.pull ) wish.setY( - 1.5 );
+			else wish.setY( - 1.0 );
+			k = 1 - Math.exp( - dt * 4.0 );
+			this.velocity.lerp( wish, k );
+			// the head follows the hands: the view turns down through the fold, unless you look elsewhere
+			if ( D > DUCK.glide && D < DUCK.pull ) this.pitch += ( - 1.25 - this.pitch ) * ( 1 - Math.exp( - dt * 3 ) );
+
+		} else this.velocity.lerp( wish.multiplyScalar( speed ), k );
+
 		if ( diving ) this.floating = false;
 		else if ( p.y > eyeTarget - 0.15 ) this.floating = true;
 		if ( this.floating ) {

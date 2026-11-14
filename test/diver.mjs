@@ -2,7 +2,7 @@
 // the chase camera while swimming (player/Player.js): posed on the CPU, no GPU.
 //   node test/diver.mjs
 import * as E from '../src/engine/index.js';
-import { Diver } from '../src/game/Diver.js';
+import { Diver, DUCK } from '../src/game/Diver.js';
 import { PlayerDiver } from '../src/game/PlayerDiver.js';
 import { Player } from '../src/player/Player.js';
 import { TerrainData } from '../src/world/TerrainData.js';
@@ -175,14 +175,53 @@ check( camera.position.y > player.eye.y, 'chase camera a little above' );
 input.wheel = 20;
 step( 1 );
 check( player.swimDist <= 8 && player.swimDist > 3.4, `wheel back: ${ player.swimDist.toFixed( 2 ) } m` );
-// diving in third person: the camera follows behind, above the seabed
+// diving from the surface is a duck dive: W while looking down starts it, and the body takes
+// over for DUCK.end seconds: a glide ahead, then down with the legs lifted, no kick
 input.keys.add( 'KeyW' );
 player.pitch = - 1.0;
-step( 3 );
+const y0 = player.position.y, x0 = player.position.x, z0 = player.position.z;
+step( 0.2 );
+check( player.duck !== null && player.duck < 0.3, `looking down + W at the surface starts a duck dive (${ player.duck?.toFixed( 2 ) } s in)` );
+input.keys.delete( 'KeyW' ); // no input needed from here
+step( DUCK.glide - 0.2 );
+const glided = Math.hypot( player.position.x - x0, player.position.z - z0 );
+check( Math.abs( player.position.y - y0 ) < 0.25 && glided > 0.25, `glide: level, moving ahead ${ glided.toFixed( 2 ) } m` );
+check( me.diver.arm.up > 0.8 && me.diver.kickAmp > 0.3, `glide: arms ahead, two gentle kicks (${ me.diver.kickAmp.toFixed( 2 ) })` );
+step( DUCK.knife - DUCK.glide );
+check( me.diver.hinge > 1.3 && me.diver.elev < - 1.3, `jackknife: a right angle at the hips (${ ( me.diver.hinge * 180 / Math.PI ).toFixed( 0 ) } deg), torso straight down` );
+check( player.pitch < - 1.1, `the view follows the hands down (${ ( player.pitch * 180 / Math.PI ).toFixed( 0 ) } deg)` );
+step( DUCK.legs - DUCK.knife );
+const kneeW = new E.Vector3().setFromMatrixPosition( me.diver.legJoints[ 0 ].knee.matrixWorld );
+check( me.diver.hinge < 0.3 && kneeW.y > player.position.y + 0.5 && me.diver.kickAmp < 0.05, `legs up: straight above the body (knees ${ ( kneeW.y - player.position.y ).toFixed( 2 ) } m over the float point, hinge ${ ( me.diver.hinge * 180 / Math.PI ).toFixed( 0 ) } deg), no kick (${ me.diver.kickAmp.toFixed( 2 ) })` );
+const yLegs = player.position.y;
+step( DUCK.pull - DUCK.legs );
+check( yLegs - player.position.y > 0.6, `the arm pull takes you down ${ ( yLegs - player.position.y ).toFixed( 2 ) } m` );
+check( me.diver.arm.up < 0.3 && me.diver.arm.out < 0.4, `pull done: arms to the thighs (up ${ me.diver.arm.up.toFixed( 2 ) }, out ${ me.diver.arm.out.toFixed( 2 ) })` );
+step( DUCK.equalize - DUCK.pull );
+check( me.diver.arm.nose > 0.8, `a hand to the nose to equalize (${ me.diver.arm.nose.toFixed( 2 ) })` );
+step( DUCK.end - DUCK.equalize + 0.2 );
+check( player.duck === null && ! player.floating, 'the duck dive ends under water, in your hands again' );
+check( player.position.y < - 1.5, `you are ${ ( - player.position.y ).toFixed( 1 ) } m down` );
+// then finning down in third person: the camera follows behind, above the seabed
+input.keys.add( 'KeyW' );
+step( 2 );
 input.keys.delete( 'KeyW' );
 const floor = terrain.heightAt( camera.position.x, camera.position.z );
-check( player.position.y < - 1.5 && camera.position.y > floor + 0.3, `diving: the camera follows (player y ${ player.position.y.toFixed( 1 ) }, camera ${ camera.position.y.toFixed( 1 ) } over the seabed at ${ floor.toFixed( 1 ) })` );
+check( camera.position.y > floor + 0.3, `diving: the camera follows (player y ${ player.position.y.toFixed( 1 ) }, camera ${ camera.position.y.toFixed( 1 ) } over the seabed at ${ floor.toFixed( 1 ) })` );
 check( player.swimCam === 'third' && me.diver.kickAmp > 0.3, `diving: still third person, kicking (${ me.diver.kickAmp.toFixed( 2 ) })` );
+// a second dive from under water is no duck dive; back at the surface, Space aborts one
+input.keys.add( 'Space' );
+step( 6 );
+input.keys.delete( 'Space' );
+check( player.floating && player.duck === null, 'back at the surface' );
+input.keys.add( 'KeyC' );
+step( 0.5 );
+check( player.duck !== null, 'C at the surface starts a duck dive' );
+input.keys.add( 'Space' );
+step( 0.1 );
+check( player.duck === null, 'Space aborts it' );
+input.keys.delete( 'KeyC' );
+input.keys.delete( 'Space' );
 // with the gun out in first person the arms are hidden (the gun's own view has them)
 input.press( 'KeyV' );
 step( 0.5, true );

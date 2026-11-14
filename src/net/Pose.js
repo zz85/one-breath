@@ -6,14 +6,14 @@
 //   1-3 x y z  the player's position (the feet on land, the float point swimming)
 //   4 yaw  5 pitch   the view
 //   6 mode    0 walk, 1 swim, 2 deck, 3 boat
-//   7 flags   FLAG.* bits
+//   7 flags   FLAG.* bits (duck: in a duck dive from the surface)
 //   8 speed   m/s
 //   9 depth   m below the surface (0 at or above it)
 
 export const POSE_LEN = 10;
 export const MODE_CODE = { walk: 0, swim: 1, deck: 2, boat: 3 };
 export const MODE_NAME = [ 'walk', 'swim', 'deck', 'boat' ];
-export const FLAG = { floating: 1, gun: 2, blackout: 4 };
+export const FLAG = { floating: 1, gun: 2, blackout: 4, duck: 8 };
 
 export function encodePose( p, out = new Float32Array( POSE_LEN ) ) {
 
@@ -21,7 +21,7 @@ export function encodePose( p, out = new Float32Array( POSE_LEN ) ) {
 	out[ 1 ] = p.x; out[ 2 ] = p.y; out[ 3 ] = p.z;
 	out[ 4 ] = p.yaw; out[ 5 ] = p.pitch;
 	out[ 6 ] = MODE_CODE[ p.mode ] ?? 0;
-	out[ 7 ] = ( p.floating ? FLAG.floating : 0 ) | ( p.gun ? FLAG.gun : 0 ) | ( p.blackout ? FLAG.blackout : 0 );
+	out[ 7 ] = ( p.floating ? FLAG.floating : 0 ) | ( p.gun ? FLAG.gun : 0 ) | ( p.blackout ? FLAG.blackout : 0 ) | ( p.duck ? FLAG.duck : 0 );
 	out[ 8 ] = p.speed || 0;
 	out[ 9 ] = p.depth || 0;
 	return out;
@@ -47,7 +47,7 @@ export function decodePose( data ) {
 	return {
 		t: a[ 0 ], x: a[ 1 ], y: a[ 2 ], z: a[ 3 ], yaw: a[ 4 ], pitch: a[ 5 ],
 		mode: MODE_NAME[ a[ 6 ] | 0 ] || 'walk',
-		floating: !! ( flags & FLAG.floating ), gun: !! ( flags & FLAG.gun ), blackout: !! ( flags & FLAG.blackout ),
+		floating: !! ( flags & FLAG.floating ), gun: !! ( flags & FLAG.gun ), blackout: !! ( flags & FLAG.blackout ), duck: !! ( flags & FLAG.duck ),
 		speed: a[ 8 ], depth: a[ 9 ],
 	};
 
@@ -138,7 +138,7 @@ export class PoseBuffer {
 			out.pitch = a.pitch + ( b.pitch - a.pitch ) * k;
 			out.speed = a.speed + ( b.speed - a.speed ) * k;
 			out.depth = a.depth + ( b.depth - a.depth ) * k;
-			if ( k > 0.5 ) Object.assign( out, { mode: b.mode, floating: b.floating, gun: b.gun, blackout: b.blackout } );
+			if ( k > 0.5 ) Object.assign( out, { mode: b.mode, floating: b.floating, gun: b.gun, blackout: b.blackout, duck: b.duck } );
 			return out;
 
 		}

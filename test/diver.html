@@ -43,7 +43,7 @@ import { MeshRenderer } from '../src/engine/render/MeshRenderer.js';
 import { SunShadows } from '../src/engine/render/Shadows.js';
 import { FullscreenPass } from '../src/engine/render/FullscreenPass.js';
 import * as E from '../src/engine/index.js';
-import { Diver } from '../src/game/Diver.js';
+import { Diver, DUCK } from '../src/game/Diver.js';
 import { createPropMaterial } from '../src/game/GameMaterials.js';
 
 const qs = new URLSearchParams( location.search );
@@ -61,7 +61,7 @@ const POSES = {
 	stand: { label: 'Standing', pose: { mode: 'walk', floating: false, speed: 0, pitch: 0 } },
 	surface: { label: 'Surface', pose: { mode: 'swim', floating: true, speed: 0, pitch: 0 } },
 	swim: { label: 'Swimming', pose: { mode: 'swim', floating: false, speed: 1.5, pitch: 0 } },
-	dive: { label: 'Duck dive', pose: { mode: 'swim', floating: false, speed: 2.4, pitch: - 1.2, sprint: true } },
+	freefall: { label: 'Freefall', pose: { mode: 'swim', floating: false, speed: 2.4, pitch: - 1.2, sprint: true } },
 	gun: { label: 'Gun', pose: { mode: 'swim', floating: false, speed: 1.0, pitch: - 0.2, gun: true } },
 	blackout: { label: 'Blackout', pose: { mode: 'swim', floating: false, speed: 0.3, pitch: 0, blackout: true } },
 };
@@ -84,6 +84,14 @@ for ( const k in POSES ) {
 
 }
 
+// the duck dive: from the surface pose, the sequence runs on the figure's own clock (DUCK), the
+// view turning down through the fold as the player's does; ?duck=<seconds> freezes it there
+const duckBtn = document.createElement( 'button' );
+duckBtn.textContent = 'Duck dive';
+duckBtn.onclick = () => { poseName = 'surface'; inputs.speed = 0; inputs.pitch = 0; diver.setPose( want() ); diver.duckDive(); sync(); };
+posesEl.append( duckBtn );
+const duckAt = qs.has( 'duck' ) ? Number( qs.get( 'duck' ) ) : null;
+
 const sync = () => {
 
 	for ( const b of posesEl.children ) b.classList.toggle( 'on', b.dataset.k === poseName );
@@ -98,7 +106,7 @@ sync();
 
 // ---- camera: orbit about the figure, or the figure's own eyes
 const camera = new E.PerspectiveCamera( first ? 80 : 40, W / H, 0.1, 1000 );
-const orbit = { yaw: 0.6, pitch: 0.12, dist: 5.2 };
+const orbit = { yaw: Number( qs.get( 'yaw' ) ?? 0.6 ), pitch: 0.12, dist: Number( qs.get( 'dist' ) ?? 6.5 ) };
 let drag = null;
 canvas.onpointerdown = ( e ) => { drag = { x: e.clientX, y: e.clientY }; };
 canvas.onpointerup = () => { drag = null; };
@@ -142,6 +150,7 @@ const ctx = canvas.getContext( '2d' );
 // settle into the first pose before the first frame
 diver.setPose( want() );
 for ( let t = 0; t < 3; t += 1 / 60 ) diver.update( 1 / 60 );
+if ( duckAt !== null ) { for ( let t = 0; t < 3; t += 1 / 60 ) { diver.setPose( { duck: Math.max( 0, duckAt - 3 + t ) } ); diver.update( 1 / 60 ); } }
 
 const frames = Number( qs.get( 'frames' ) || 2 );
 let drawn = 0, last = performance.now(), busy = false;
@@ -153,7 +162,10 @@ const loop = async ( now ) => {
 	const dt = Math.min( 0.05, ( now - last ) / 1000 ) * inputs.slow;
 	last = now;
 	diver.setPose( want() );
+	if ( duckAt !== null ) diver.setPose( { duck: duckAt } );
+	else if ( diver.ducking && diver.duck > DUCK.glide && diver.duck < DUCK.pull ) inputs.pitch += ( - 1.25 - inputs.pitch ) * ( 1 - Math.exp( - dt * 3 ) );
 	diver.update( dt );
+	if ( diver.ducking ) duckBtn.textContent = `Duck dive ${ diver.duck.toFixed( 1 ) } s`; else duckBtn.textContent = 'Duck dive';
 	placeCamera();
 	const L = diver.legJoints[ 0 ];
 	$( 'out' ).innerHTML = `hip ${ ( L.hip.rotation.x * 180 / Math.PI ).toFixed( 0 ) } deg &middot; foot ${ ( L.ankle.rotation.x * 180 / Math.PI ).toFixed( 0 ) } deg &middot; blade bend ${ ( L.blade.bend * 180 / Math.PI ).toFixed( 0 ) } deg<br>body ${ ( diver.elev * 180 / Math.PI ).toFixed( 0 ) } deg &middot; neck ${ ( diver.neckBend * 180 / Math.PI ).toFixed( 0 ) } deg &middot; kick ${ diver.kickAmp.toFixed( 2 ) } &middot; arms out ${ diver.arm.out.toFixed( 2 ) } up ${ diver.arm.up.toFixed( 2 ) } fwd ${ diver.arm.fwd.toFixed( 2 ) }`;

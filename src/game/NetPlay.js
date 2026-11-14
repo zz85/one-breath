@@ -229,6 +229,7 @@ export class NetPlay {
 		o.floating = !! p.floating;
 		o.gun = !! ( sp && sp.equipped );
 		o.blackout = !! ( sp && sp.phase === 'blackout' );
+		o.duck = p.duck !== null && p.duck !== undefined;
 		o.speed = Math.hypot( p.velocity.x, p.velocity.y, p.velocity.z );
 		o.depth = Math.max( 0, ( p.waterH || 0 ) - p.position.y );
 		return o;

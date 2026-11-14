@@ -41,7 +41,7 @@ export class PlayerDiver {
 		const sprint = !! ( inp && ( inp.down( 'ShiftLeft' ) || inp.down( 'ShiftRight' ) ) );
 		const speed = Math.hypot( p.velocity.x, p.velocity.y, p.velocity.z );
 		const third = p.thirdPerson;
-		d.setPose( { mode: 'swim', floating: p.floating, pitch: p.pitch, speed, blackout, gun, sprint } );
+		d.setPose( { mode: 'swim', floating: p.floating, pitch: p.pitch, speed, blackout, gun, sprint, duck: p.duck } );
 		d.update( dt );
 		// first person: the head would be in the lens, and the speargun's own view stands in for the arms
 		d.showHead( third );

@@ -187,6 +187,9 @@ class RemoteDiver {
 		this.group.visible = true;
 		const d = this.diver;
 		d.setPose( { mode: p.mode, floating: p.floating, pitch: p.pitch, speed: p.speed, blackout: p.blackout, gun: p.gun, sprint: p.speed > 2.0 } );
+		// a duck dive starts as the flag comes on; the figure keeps its own clock for the rest
+		if ( p.duck && ! this._duck ) d.duckDive();
+		this._duck = !! p.duck;
 		d.update( dt );
 		d.place( p.yaw, this._pos.set( p.x, p.y, p.z ) );
 

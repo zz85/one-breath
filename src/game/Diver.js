@@ -24,6 +24,7 @@ import { PAT } from './GameMaterials.js';
 //   streamline arms overhead, hands together: sprinting down (a duck dive / freefall)
 //   gun        arms forward (holding the speargun; the gun itself is the SpearGun's)
 //   blackout   limp: arms hanging, head dropped, body drifting flat
+//   duck dive  d.duckDive() (or setPose( { duck: seconds } ) to drive its clock): the sequence in DUCK
 
 const PIVOT = 1.45; // swimming, the body hangs from the float point here (the chest)
 const EYE = new Vector3( 0, 1.66, 0.09 ); // the eyes, in the figure frame (head upright)
@@ -36,6 +37,11 @@ const THIGH = 0.44, SHIN = 0.42;
 const FOOT_L = 0.24; // heel to toes
 const POINT = Math.PI / 2 - 0.45; // the pointed foot: toes trailing the heel, radians past flat
 const BLADE_L = 0.8, BLADE_N = 7; // the fin blade past the pocket, in slices
+// The duck dive, in seconds from its start (DUCK.end is its length): a flat glide with the arms
+// ahead and two gentle kicks, the jackknife (arms point down, a right angle at the hips), the legs
+// lifted straight up (their weight drives the body down), one long breaststroke pull of both arms
+// to the thighs, one hand to the nose to equalize, then finning.
+export const DUCK = { glide: 0.7, knife: 1.4, legs: 2.1, pull: 3.0, equalize: 3.6, end: 4.0 };
 const SUIT = { color: 0x16191c, rough: 0.55, pattern: PAT.rubber };
 const SKIN = { color: 0x9a6a4a, rough: 0.55, pattern: PAT.skin };
 const BLACK = { color: 0x0b0d0e, rough: 0.5, pattern: PAT.rubber };
@@ -132,7 +138,10 @@ export class Diver {
 		this.neckBend = 0;
 		this.kickPhase = 0;
 		this.kickAmp = 0;
-		this.arm = { out: 0, up: 0, fwd: 0, limp: 0, bend: 0.1 }; // the arm pose, blended
+		this.arm = { out: 0, up: 0, fwd: 0, limp: 0, bend: 0.1, nose: 0 }; // the arm pose, blended
+		this.hinge = 0; // the jackknife: the legs' angle at the hips toward the belly, eased
+		this.duck = null; // seconds into a duck dive, or null
+		this._duckOwn = false; // the figure keeps the clock itself (a remote diver)
 		this.headVisible = true;
 		this.armsVisible = true;
 		this.t = Math.random() * 10;
@@ -142,6 +151,26 @@ export class Diver {
 	setPose( p ) {
 
 		Object.assign( this.want, p );
+		if ( 'duck' in p ) {
+
+			this.duck = p.duck;
+			this._duckOwn = false;
+
+		}
+
+	}
+
+	// start a duck dive from the surface; the figure runs the sequence on its own clock
+	duckDive() {
+
+		this.duck = 0;
+		this._duckOwn = true;
+
+	}
+
+	get ducking() {
+
+		return this.duck !== null && this.duck < DUCK.end;
 
 	}
 
@@ -170,12 +199,39 @@ export class Diver {
 		const speed = Math.max( 0, w.speed || 0 );
 		const moving = clamp( speed / 1.0, 0, 1 );
 
+		// ---- the duck dive's clock
+		if ( this.duck !== null ) {
+
+			if ( this._duckOwn ) this.duck += dt;
+			if ( this.duck >= DUCK.end || ! swim || blackout ) this.duck = null;
+
+		}
+
+		const D = this.duck, ducking = D !== null;
+		// where the sequence stands: 0 glide, 1 jackknife, 2 legs up, 3 pull, 4 equalize, with the
+		// fraction through the stage
+		let stage = - 1, f = 0;
+		if ( ducking ) {
+
+			const marks = [ 0, DUCK.glide, DUCK.knife, DUCK.legs, DUCK.pull, DUCK.equalize, DUCK.end ];
+			for ( let i = 1; i < marks.length; i ++ ) if ( D < marks[ i ] ) { stage = i - 1; f = ( D - marks[ i - 1 ] ) / ( marks[ i ] - marks[ i - 1 ] ); break; }
+
+		}
+
 		// ---- body: how it lies in the water
 		this.lie = ease( this.lie, swim ? 1 : 0, dt, 5 );
 		let elev;
 		if ( ! swim ) elev = Math.PI / 2;
 		else if ( blackout ) elev = 0.25;
-		else {
+		else if ( ducking ) {
+
+			// flat on the surface; the jackknife folds the torso straight down and it stays vertical
+			// until the finning starts, where the view takes over again
+			if ( stage === 0 ) elev = 0.05;
+			else if ( stage <= 3 ) elev = - Math.PI / 2 + 0.05;
+			else elev = MathUtils.lerp( - Math.PI / 2 + 0.05, clamp( pitch + 0.37, - 1.45, 1.25 ), stage === 5 ? f : 0 );
+
+		} else {
 
 			// swimming: the body a little above the view (the neck bends back to look ahead);
 			// floating still at the surface: hanging, legs down, and piking forward a little as you
@@ -186,7 +242,7 @@ export class Diver {
 
 		}
 
-		this.elev = ease( this.elev, elev, dt, 4 );
+		this.elev = ease( this.elev, elev, dt, ducking ? 7 : 4 );
 		// the figure's +Y after the tilt points at elevation ( pi/2 - tilt )
 		this.tilt.rotation.x = ( Math.PI / 2 - this.elev ) * this.lie;
 		this.body.position.y = - PIVOT * this.lie;
@@ -195,6 +251,7 @@ export class Diver {
 		let neck;
 		if ( ! swim ) neck = clamp( - pitch * 0.5, - 0.5, 0.4 );
 		else if ( blackout ) neck = 0.5;
+		else if ( ducking && stage >= 1 && stage <= 3 ) neck = 0.25; // chin tucked: the head follows the hands
 		else neck = clamp( this.elev - Math.PI / 2 - pitch, - 1.25, 0.7 );
 		this.neckBend = ease( this.neckBend, neck, dt, 6 );
 		this.neck.rotation.x = this.neckBend;
@@ -202,8 +259,16 @@ export class Diver {
 		// ---- legs: a flutter kick with the speed through the water, feet together in a glide. The
 		// hip leads, the knee gives a little on the recovery, the ankle is pointed (the toes trail
 		// the heel, the blade carries on from them) and the blade bends under the water (Blade).
-		const kicking = swim && ! blackout ? clamp( speed / 1.2, 0, 1 ) : 0;
-		this.kickAmp = ease( this.kickAmp, kicking, dt, 4 );
+		let kicking = swim && ! blackout ? clamp( speed / 1.2, 0, 1 ) : 0;
+		// the duck dive: two gentle kicks in the glide, then the legs are still until the blades
+		// are under
+		if ( ducking ) kicking = stage === 0 ? 0.45 : stage <= 3 ? 0 : kicking;
+		this.kickAmp = ease( this.kickAmp, kicking, dt, ducking ? 8 : 4 );
+		// the jackknife: the legs fold toward the belly (a right angle at the hips) and come back
+		// in line as they lift straight up
+		let hinge = 0;
+		if ( ducking ) hinge = stage === 1 ? Math.PI / 2 : stage === 2 ? ( Math.PI / 2 ) * ( 1 - f ) : 0;
+		this.hinge = ease( this.hinge, hinge, dt, 9 );
 		this.kickPhase += dt * ( 3.2 + 3.3 * this.kickAmp );
 		const amp = ( 0.04 + 0.3 * this.kickAmp ) * this.lie;
 		const stand = 1 - this.lie;
@@ -211,7 +276,7 @@ export class Diver {
 		for ( const L of this.legJoints ) {
 
 			const ph = this.kickPhase + ( L.s < 0 ? 0 : Math.PI );
-			L.hip.rotation.x = Math.sin( ph ) * amp + stand * 0.02 + ( blackout ? 0.25 : 0 ) * this.lie;
+			L.hip.rotation.x = Math.sin( ph ) * amp + stand * 0.02 + ( blackout ? 0.25 : 0 ) * this.lie - this.hinge;
 			L.knee.rotation.x = ( 0.06 + Math.max( 0, Math.sin( ph + 1.2 ) ) * 0.35 * this.kickAmp ) * this.lie + stand * 0.03;
 			// the pointed foot: in the water the toes trail the heel (plantar flexion ~ 65 deg); on
 			// land the foot is flat
@@ -230,14 +295,22 @@ export class Diver {
 
 		// ---- arms
 		const A = this.arm;
-		let out = 0, up = 0, fwd = 0, limp = 0, bend = 0.1;
-		if ( ! swim ) { out = 0.08; bend = 0.15; } else if ( blackout ) { limp = 1; bend = 0.3; } else if ( w.gun ) { fwd = 1; bend = 0.35; } else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.38 * ( 1 - moving * 2 ); bend = 0.7; }
+		let out = 0, up = 0, fwd = 0, limp = 0, bend = 0.1, nose = 0;
+		if ( ! swim ) { out = 0.08; bend = 0.15; } else if ( blackout ) { limp = 1; bend = 0.3; } else if ( ducking ) {
 
-		A.out = ease( A.out, out, dt, 4 );
-		A.up = ease( A.up, up, dt, 3 );
-		A.fwd = ease( A.fwd, fwd, dt, 4 );
+			// arms straight ahead through the glide and the jackknife (pointing down once the torso
+			// is), one breaststroke pull out and down to the thighs, then a hand to the nose
+			if ( stage <= 2 ) { up = 1; bend = 0.02; } else if ( stage === 3 ) { up = 1 - f; out = Math.sin( f * Math.PI ) * 0.9; bend = 0.05; } else { nose = stage === 4 ? 1 : 1 - f; bend = 0.15; }
+
+		} else if ( w.gun ) { fwd = 1; bend = 0.35; } else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.38 * ( 1 - moving * 2 ); bend = 0.7; }
+
+		const ar = ducking ? 8 : 4;
+		A.out = ease( A.out, out, dt, ar );
+		A.up = ease( A.up, up, dt, ducking ? 8 : 3 );
+		A.fwd = ease( A.fwd, fwd, dt, ar );
 		A.limp = ease( A.limp, limp, dt, 2 );
-		A.bend = ease( A.bend, bend, dt, 4 );
+		A.bend = ease( A.bend, bend, dt, ar );
+		A.nose = ease( A.nose, nose, dt, 8 );
 		for ( const a of this.arms ) {
 
 			const sh = a.shoulder;
@@ -248,6 +321,14 @@ export class Diver {
 			sh.rotation.z = a.s * ( 0.06 + A.out * 1.1 + A.up * ( Math.PI + 0.24 ) + breathe ) * ( 1 - A.fwd ) + a.s * 0.1 * A.fwd;
 			sh.rotation.x = A.fwd * ( - Math.PI / 2 + 0.15 ) - A.out * 0.35 - A.limp * 0.5 + A.up * 0.1;
 			a.elbow.rotation.x = - A.bend * ( 1 - A.up ) * ( 1 - A.fwd ) - A.fwd * 0.2;
+			// the right hand to the nose: the upper arm forward and up, the elbow folded
+			if ( a.s > 0 && A.nose > 0.001 ) {
+
+				sh.rotation.x = MathUtils.lerp( sh.rotation.x, - 2.3, A.nose );
+				sh.rotation.z = MathUtils.lerp( sh.rotation.z, 0.35, A.nose );
+				a.elbow.rotation.x = MathUtils.lerp( a.elbow.rotation.x, - 2.45, A.nose );
+
+			}
 
 		}
 
