@@ -210,7 +210,7 @@ export class Spearfishing {
 		const wasUnder = this.apnea.under;
 		this.apnea.update( dt, { under, depth, effort } );
 		// diving again before resting twice as long as the last dive: this breath-hold runs short
-		if ( under && ! wasUnder && this.apnea._penalty > 0.08 ) this.toast( `Down again after ${ Math.round( this.apnea.surfaceTimeBefore || 0 ) } s · rest 2:1 or this dive runs short`, 3500 );
+		if ( under && ! wasUnder && this.apnea._penalty > 0.15 ) this.toast( 'You haven\'t got your breath back · this dive will be short', 3000 );
 		if ( this.practice && this.practice.air ) {
 
 			this.apnea.o2 = 0.21;

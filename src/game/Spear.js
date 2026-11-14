@@ -662,6 +662,7 @@ export class Apnea {
 		this._contraction = 0;
 		this.contractions = 0;
 		this.restDebt = 0; // seconds of surface rest still owed (2 per second under)
+		this.restStart = 0;
 		this.rested = true; // the last surface interval met 2:1
 		this._penalty = 0; // extra O2 use on this dive from the rest owed at its start
 
@@ -674,10 +675,10 @@ export class Apnea {
 
 	}
 
-	// the surface interval the last dive asks for, and how far into it you are (0..1)
-	get restNeeded() {
+	// how far into the surface rest you are: 0 just up .. 1 rested (twice the dive time)
+	get restProgress() {
 
-		return this.lastDive ? this.lastDive.time * REST_RATIO : 0;
+		return this.restStart > 0 ? 1 - this.restDebt / this.restStart : 1;
 
 	}
 
@@ -722,7 +723,12 @@ export class Apnea {
 
 		} else {
 
-			if ( this.under ) this.lastDive = { time: this.diveTime, depth: this.maxDepth };
+			if ( this.under ) {
+
+				this.lastDive = { time: this.diveTime, depth: this.maxDepth };
+				this.restStart = this.restDebt; // the rest owed as you surface, for restProgress
+
+			}
 			this.surfaceTime += dt;
 			this.restDebt = Math.max( 0, this.restDebt - dt );
 			// breathing at the top: O2 back within ~20 s, the CO2 slower (breathe-up)

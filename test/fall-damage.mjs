@@ -231,6 +231,16 @@ const makeAudio = () => {
 	ok( tired._penalty > 0 && tired._penalty <= REST_MAX_PENALTY, `penalty within bounds (${ tired._penalty.toFixed( 2 ) })` );
 	ok( REST_RATIO === 2, 'the ratio is 2:1' );
 
+	// the breath bar's refill at the top
+	const bar = new Apnea( { holdS: 70 } );
+	dive( bar, 30 );
+	rest( bar, 0.1 );
+	ok( bar.restProgress < 0.05, `just surfaced: bar near empty (${ bar.restProgress.toFixed( 2 ) })` );
+	rest( bar, 30 );
+	ok( Math.abs( bar.restProgress - 0.5 ) < 0.02, `30 s up after a 30 s dive: half full (${ bar.restProgress.toFixed( 2 ) })` );
+	rest( bar, 30 );
+	ok( bar.restProgress === 1, '60 s up: full' );
+
 }
 
 // ---- results
