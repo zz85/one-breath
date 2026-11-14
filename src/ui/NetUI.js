@@ -17,6 +17,11 @@ const CSS = /* css */`
 .nu-people { display: flex; flex-wrap: wrap; gap: var(--tw-1) var(--tw-2); padding: 0 var(--tw-2); font-size: var(--tw-fs-sm); color: var(--tw-ink-2); }
 .nu-people span::before { content: ''; display: inline-block; width: 0.55em; height: 0.55em; border-radius: 50%; margin-right: 0.35em; background: var(--nu-c); }
 .nu-people .is-self { color: var(--tw-ink-3); }
+.nu-people .is-me { cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.3); }
+.nu-people .is-me:hover { color: var(--tw-ink); }
+.nu-people .is-me::after { content: ' \\270E'; opacity: 0.7; }
+.nu-rename { width: calc(140 * var(--tw-u)); padding: 1px var(--tw-2); border-radius: 999px; border: 1px solid var(--tw-aqua);
+	background: rgba(12, 18, 26, 0.85); color: var(--tw-ink); font: 500 var(--tw-fs-sm) var(--tw-font); outline: none; }
 .nu-log { display: flex; flex-direction: column; gap: 2px; padding: 0 var(--tw-2); }
 .nu-line { font-size: var(--tw-fs-md); line-height: 1.35; text-shadow: 0 1px 3px rgba(0,0,0,0.7); overflow-wrap: anywhere; transition: opacity 1.2s ease; }
 .nu-line b { color: var(--nu-c); font-weight: 600; margin-right: 0.35em; }
@@ -65,7 +70,7 @@ export class NetUI {
 		this.peopleEl = el( 'div', 'nu-people' );
 		this.log = el( 'div', 'nu-log' );
 		this.hint = el( 'div', 'nu-hint' );
-		this.hint.innerHTML = '<span class="nu-hint-locked">Enter: chat · Esc: use the mouse</span>';
+		this.hint.innerHTML = '<span class="nu-hint-locked">Enter: chat · Esc: use the mouse, then click your name to change it</span>';
 		this.input = el( 'input', 'nu-input' );
 		this.input.type = 'text';
 		this.input.maxLength = 200;
@@ -146,12 +151,61 @@ export class NetUI {
 		this.peopleEl.replaceChildren( ...ids.map( ( id ) => {
 
 			const p = people[ id ];
-			const s = el( 'span', p.self ? 'is-self' : '', p.self ? `${ p.name } (you)` : p.name );
+			const s = el( 'span', p.self ? 'is-self is-me' : '', p.self ? `${ p.name } (you)` : p.name );
+			if ( p.self ) {
+
+				s.title = 'Change your name';
+				s.addEventListener( 'click', ( e ) => {
+
+					e.stopPropagation();
+					this.rename( s, p.name );
+
+				} );
+
+			}
+
 			s.style.setProperty( '--nu-c', hsl( p.hue ) );
 			return s;
 
 		} ) );
 		if ( ids.length < 2 ) this.peopleEl.append( el( 'span', 'is-self', 'waiting for friends: Invite copies the link' ) );
+
+	}
+
+	// your name in the list turns into a box: Enter keeps the new name, Esc or a click away doesn't
+	rename( span, current ) {
+
+		const box = el( 'input', 'nu-rename' );
+		box.type = 'text';
+		box.maxLength = 20;
+		box.value = current;
+		box.setAttribute( 'aria-label', 'Your name' );
+		this.typing = true; // Enter in the box isn't the chat's
+		const inp = this.net.app.input;
+		if ( inp ) inp.keys.clear();
+		if ( document.pointerLockElement ) document.exitPointerLock();
+		let done = false;
+		const finish = ( keep ) => {
+
+			if ( done ) return;
+			done = true;
+			this.typing = false;
+			if ( keep && box.value.trim() && box.value.trim() !== current ) this.net.setName( box.value );
+			box.replaceWith( span );
+			if ( keep && inp && ! inp.touch && inp.requestLock ) inp.requestLock();
+
+		};
+		box.addEventListener( 'keydown', ( e ) => {
+
+			e.stopPropagation();
+			if ( e.key === 'Enter' ) finish( true );
+			else if ( e.key === 'Escape' ) finish( false );
+
+		} );
+		box.addEventListener( 'blur', () => finish( false ) );
+		span.replaceWith( box );
+		box.focus();
+		box.select();
 
 	}
 

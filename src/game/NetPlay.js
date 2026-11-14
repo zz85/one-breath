@@ -148,7 +148,7 @@ export class NetPlay {
 
 		} );
 		this._people( room.people() );
-		if ( this.ui ) this.ui.system( `You're ${ this.name }. Press Enter to chat, or type /name to change your name.` );
+		if ( this.ui ) this.ui.system( `You're ${ this.name }. Press Enter to chat. Click your name above to change it.` );
 
 	}
 

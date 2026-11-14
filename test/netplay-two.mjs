@@ -47,6 +47,18 @@ await ben.keyboard.press( 'Enter' );
 await ben.keyboard.type( '/name Benny' );
 await ben.keyboard.press( 'Enter' );
 check( await wait( ana, () => document.querySelector( '.nt' )?.textContent === 'Benny', 10000 ), '/name Benny: Ana\'s tag for him changes' );
+// Ana clicks her own name in the list, types a new one, Enter
+await ana.click( '.nu-people .is-me' );
+check( await ana.evaluate( () => document.activeElement?.classList.contains( 'nu-rename' ) && document.activeElement.value === 'Ana' ), 'Ana: a click on her name turns it into a box' );
+await ana.keyboard.type( 'Anita' );
+await ana.keyboard.press( 'Enter' );
+check( await ana.evaluate( () => document.querySelector( '.nu-people .is-me' )?.textContent === 'Anita (you)' && ! document.querySelector( '.nu' ).classList.contains( 'is-typing' ) ), 'Enter keeps it, and doesn\'t open the chat' );
+check( await wait( ben, () => document.querySelector( '.nt' )?.textContent === 'Anita', 10000 ), 'Ben\'s tag for her says Anita' );
+check( await ana.evaluate( () => localStorage.getItem( 'onebreath.name' ) ) === 'Anita', 'and it\'s kept for next time' );
+await ana.click( '.nu-people .is-me' );
+await ana.keyboard.type( 'Zed' );
+await ana.keyboard.press( 'Escape' );
+check( await ana.evaluate( () => document.querySelector( '.nu-people .is-me' )?.textContent === 'Anita (you)' ), 'Esc leaves the name as it was' );
 await ana.screenshot( { path: '/tmp/netplay-ana.png' } );
 await ben.screenshot( { path: '/tmp/netplay-ben.png' } );
 await ben.getByRole( 'button', { name: 'Leave' } ).click();
