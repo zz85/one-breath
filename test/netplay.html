@@ -1,0 +1,34 @@
+<!doctype html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Dive with friends</title>
+	<style>body { margin: 0; height: 100vh; overflow: hidden; background: #0b3a4a url(/ui/keyart-720.jpg) center / cover; }</style>
+</head>
+<body>
+<script type="module">
+// Dev / test page: the HUD with the dive-with-friends panel (game/NetPlay.js, ui/NetUI.js) and a
+// stand-in player, no world. ?dive=<code> joins; ?x=&z= puts this player there, facing -z.
+// window.__np is the NetPlay. test/netplay-two.mjs drives two of these.
+import '../src/ui/ui.css';
+import { UI } from '../src/ui/UI.js';
+import { NetPlay } from '../src/game/NetPlay.js';
+import { Group, PerspectiveCamera, Vector3 } from '../src/engine/index.js';
+
+const qs = new URLSearchParams( location.search );
+const ui = new UI();
+const camera = new PerspectiveCamera( 60, innerWidth / innerHeight, 0.1, 1000 );
+camera.position.set( 0, 0.2, 0 );
+const scene = new Group();
+const player = { position: new Vector3( Number( qs.get( 'x' ) || 0 ), 0, Number( qs.get( 'z' ) || 0 ) ), velocity: new Vector3( 0, 0, - 1 ), yaw: 0, pitch: 0, mode: 'swim', floating: true, waterH: 0 };
+const app = { qs, scene, camera, player, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
+const game = { app, stand: { material: null }, spear: null };
+const np = window.__np = new NetPlay( game );
+np.attach( ui );
+let last = performance.now();
+const loop = ( t ) => { const dt = Math.min( 0.1, ( t - last ) / 1000 ); last = t; np.update( dt ); requestAnimationFrame( loop ); };
+requestAnimationFrame( loop );
+</script>
+</body>
+</html>

@@ -5,7 +5,8 @@
     "dev": "vite --host 127.0.0.1 --port 5189",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/game-logic.mjs && node test/spear-logic.mjs && node test/spear-game.mjs && node test/touch-words.mjs && node test/quality.mjs && node test/tune.mjs && node test/modes.mjs && node test/fall-damage.mjs && node test/engine-smoke.mjs"
+    "test": "node test/game-logic.mjs && node test/spear-logic.mjs && node test/spear-game.mjs && node test/touch-words.mjs && node test/quality.mjs && node test/tune.mjs && node test/modes.mjs && node test/fall-damage.mjs && node test/net-pose.mjs && node test/engine-smoke.mjs",
+    "test:net": "node test/net-two.mjs && node test/netplay-two.mjs"
   },
   "devDependencies": {
     "vite": "^8.3.0",
@@ -13,5 +14,8 @@
   },
   "license": "MIT",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "dependencies": {
+    "trystero": "^0.27.0"
+  }
 }

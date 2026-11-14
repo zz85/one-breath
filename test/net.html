@@ -1,0 +1,24 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>net test</title>
+<!-- Two of these pages in one room (test/net-two.mjs): each sends poses and a chat line, and
+     window.__net shows what arrived. ?dive=<code>&name=<name> -->
+<pre id="log"></pre>
+<script type="module">
+import { DiveRoom } from '../src/net/DiveRoom.js';
+import { encodePose } from '../src/net/Pose.js';
+const qs = new URLSearchParams( location.search );
+const log = ( s ) => { document.getElementById( 'log' ).textContent += s + '\n'; };
+const out = window.__net = { poses: 0, chat: [], people: {}, errors: [], ready: false };
+const net = await DiveRoom.join( qs.get( 'dive' ), { name: qs.get( 'name' ) } );
+out.self = net.selfId; out.ready = true;
+net.onPeople( ( p ) => { out.people = p; log( 'people ' + JSON.stringify( p ) ); } );
+net.onPose( ( id, p ) => { out.poses ++; out.lastPose = p; } );
+net.onChat( ( id, t ) => { out.chat.push( t ); log( 'chat ' + t ); } );
+net.onError( ( e ) => { out.errors.push( e.code ); log( 'error ' + e.code ); } );
+const buf = new Float32Array( 10 );
+let i = 0;
+setInterval( () => { net.sendPose( encodePose( { t: performance.now() / 1000, x: i ++, y: -3, z: 2, yaw: 0, pitch: 0, mode: 'swim', speed: 1, depth: 3 }, buf ) ); }, 80 );
+setInterval( () => { if ( net.count > 1 ) net.say( 'hello from ' + net.name ); }, 1000 );
+window.__room = net;
+</script>

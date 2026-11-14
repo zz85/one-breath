@@ -15,6 +15,7 @@ import { Guide } from './Guide.js';
 import { TouchControls } from '../ui/TouchControls.js';
 import { FallDamage } from './FallDamage.js';
 import { FISH } from './FishTable.js';
+import { NetPlay } from './NetPlay.js';
 
 // health a fish gives when eaten
 export const eatHealth = ( kg ) => Math.min( 40, 8 + 12 * kg );
@@ -67,6 +68,9 @@ export class Game {
 
 		};
 		this.fallDamage.onDeath = () => setTimeout( () => this.toast( 'You fell to your death. You wake at the village, bruised', 5000 ), 4800 );
+
+		// diving with friends: ?dive=<code> joins their room (game/NetPlay.js)
+		this.net = typeof window !== 'undefined' && typeof RTCPeerConnection !== 'undefined' ? new NetPlay( this ) : null;
 
 	}
 
@@ -216,6 +220,7 @@ export class Game {
 			this.touch = new TouchControls( { app, game: this, root: ui.root } );
 			// fall damage gore overlays
 			this.fallDamage.attach( ui.hud || ui.root );
+			if ( this.net ) this.net.attach( ui );
 
 		}
 
@@ -265,6 +270,9 @@ export class Game {
 
 		// fall damage: gore overlays, camera shake, death sequence (after Player.update sets the camera)
 		this.fallDamage.update( dt, p, app.audio );
+
+		// the other divers in your dive room, and your own pose for them
+		if ( this.net ) this.net.update( dt );
 
 	}
 
