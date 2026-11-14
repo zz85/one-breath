@@ -1,5 +1,6 @@
 import { Vector3 } from '../engine/index.js';
 import { PoseBuffer } from '../net/Pose.js';
+import { DiverGun, FlyingShaft } from './DiverGun.js';
 import { Diver } from './Diver.js';
 
 // The other divers in your dive room (game/NetPlay.js feeds their poses): the freediver figure
@@ -27,6 +28,7 @@ export class RemoteDivers {
 		this.scene = scene;
 		this.material = material;
 		this.divers = new Map();
+		this.shots = []; // { id, shaft: FlyingShaft }
 		this.people = {};
 		this.layer = null;
 		if ( root && typeof document !== 'undefined' ) {
@@ -51,6 +53,7 @@ export class RemoteDivers {
 			const who = this.people[ id ];
 			if ( who && who.self ) return;
 			d = new RemoteDiver( id, who ? who.hue : 0.55, this.material, who ? who.look : null );
+			if ( who ) d.gun.setGear( who.gear );
 			this.divers.set( id, d );
 			this.scene.add( d.group );
 			if ( this.layer ) {
@@ -79,11 +82,23 @@ export class RemoteDivers {
 			else {
 
 				d.diver.setLook( who.look );
+				d.gun.setGear( who.gear );
 				d.setName( who.name, true );
 
 			}
 
 		}
+
+	}
+
+	// someone shot: their shaft flies from their gun (the one on their rail is hidden by the pose)
+	shot( id, shot ) {
+
+		const d = this.divers.get( id );
+		const who = this.people[ id ];
+		if ( who && who.self ) return;
+		this.shots.push( { id, shaft: new FlyingShaft( this.scene, shot, d ? d.gun.gear.gunM : 0.75 ) } );
+		while ( this.shots.length > 16 ) this.shots.shift().shaft.dispose();
 
 	}
 
@@ -93,6 +108,12 @@ export class RemoteDivers {
 		if ( ! d ) return;
 		this.scene.remove( d.group );
 		d.dispose();
+		this.shots = this.shots.filter( ( x ) => {
+
+			if ( x.id === id ) x.shaft.dispose();
+			return x.id !== id;
+
+		} );
 		if ( d.tag ) d.tag.remove();
 		this.divers.delete( id );
 
@@ -109,6 +130,14 @@ export class RemoteDivers {
 
 		const w = this.layer ? this.layer.clientWidth : 0, h = this.layer ? this.layer.clientHeight : 0;
 		if ( camera && this.layer ) camera.updateMatrixWorld();
+		this.shots = this.shots.filter( ( x ) => {
+
+			const d = this.divers.get( x.id );
+			const keep = x.shaft.update( dt, d && d.pose.mode ? !! d.pose.shaftOut : undefined );
+			if ( ! keep ) x.shaft.dispose();
+			return keep;
+
+		} );
 		for ( const d of this.divers.values() ) {
 
 			d.update( dt, now );
@@ -158,6 +187,7 @@ class RemoteDiver {
 		this.hue = hue;
 		this.buffer = new PoseBuffer();
 		this.diver = new Diver( { material, hue, look } );
+		this.gun = new DiverGun( this.diver.gunMount );
 		this.group = this.diver.group;
 		this.group.name = 'Diver:' + id.slice( 0, 8 );
 		this.group.visible = false;
@@ -193,7 +223,8 @@ class RemoteDiver {
 		if ( ! p ) return;
 		this.group.visible = true;
 		const d = this.diver;
-		d.setPose( { mode: p.mode, floating: p.floating, pitch: p.pitch, speed: p.speed, blackout: p.blackout, gun: p.gun, sprint: p.speed > 2.0 } );
+		d.setPose( { mode: p.mode, floating: p.floating, pitch: p.pitch, speed: p.speed, blackout: p.blackout, gun: p.gun, aim: p.aim, sprint: p.speed > 2.0 } );
+		this.gun.update( p );
 		// a duck dive starts as the flag comes on; the figure keeps its own clock for the rest
 		if ( p.duck && ! this._duck ) d.duckDive();
 		this._duck = !! p.duck;

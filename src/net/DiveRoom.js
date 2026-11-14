@@ -10,6 +10,8 @@
 //   net.onWorld( ( conditions ) => ... )       // the host's time and weather (not your own)
 //   net.sendPose( float32Array ); net.say( text ); net.setName( name ); net.setLook( look )
 //   net.setWorld( conditions )                 // the host only; net.isHost, net.hostId
+//   net.setGear( { gunM, bands, gunKind } )     // your speargun, in your profile
+//   net.shoot( p, d, v ); net.onShot( ( userId, shot ) => ... )   // a shot, for the others to see
 //   net.leave()
 //
 // The host is the player who made the dive (DiveRoom.join with host: true; their browser
@@ -19,7 +21,7 @@
 //
 // Trystero is loaded on the first join, so a player who never dives with friends doesn't
 // download it.
-import { decodePose, hueOf, cleanName, cleanChat } from './Pose.js';
+import { decodePose, hueOf, cleanName, cleanChat, cleanGear, cleanShot } from './Pose.js';
 import { cleanLook } from '../game/Look.js';
 
 export const APP_ID = 'zz85/one-breath';
@@ -41,11 +43,12 @@ export class DiveRoom {
 
 		this.code = code;
 		this._look = cleanLook( look );
+		this._gear = null;
 		this._host = !! host;
 		this.hostId = null;
 		this.selfId = null;
 		this.error = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [] };
 		this._chatTimes = new Map();
 		this._names = {};
 		this.room = join( {
@@ -98,6 +101,15 @@ export class DiveRoom {
 
 		} );
 
+		this._shot = room.makeAction( 'shot' );
+		this._shot.onReceive( ( { byteLength } ) => byteLength <= 512 );
+		this._shot.onMessage( ( data, { userId } ) => {
+
+			const shot = cleanShot( data );
+			if ( shot ) this._emit( 'shot', userId, shot );
+
+		} );
+
 		this._chat = room.makeAction( 'chat' );
 		this._chat.onReceive( ( { byteLength } ) => byteLength <= 2048 );
 		this._chat.onMessage( ( data, { userId } ) => {
@@ -126,6 +138,7 @@ export class DiveRoom {
 		const p = { name: this._name };
 		if ( this._look ) p.look = this._look;
 		if ( this._host ) p.host = true;
+		if ( this._gear ) p.gear = this._gear;
 		this.profile.set( p ).catch( () => {} );
 
 	}
@@ -159,6 +172,23 @@ export class DiveRoom {
 
 	}
 
+	setGear( gear ) {
+
+		const g = cleanGear( gear );
+		if ( JSON.stringify( g ) === JSON.stringify( this._gear ) ) return;
+		this._gear = g;
+		this._sendProfile();
+
+	}
+
+	shoot( p, d, v ) {
+
+		if ( ! this._shot ) return;
+		const r = ( x ) => Math.round( x * 1000 ) / 1000;
+		this._shot.send( { p: [ r( p.x ), r( p.y ), r( p.z ) ], d: [ r( d.x ), r( d.y ), r( d.z ) ], v: r( v ) } ).catch( () => {} );
+
+	}
+
 	setLook( look ) {
 
 		const l = cleanLook( look );
@@ -180,7 +210,7 @@ export class DiveRoom {
 			const self = id === this.selfId;
 			if ( ! self && ! this.room.getUsers()[ id ] ) continue; // a profile left behind
 			const p = profiles[ id ];
-			out[ id ] = { name: cleanName( p && p.name ) || 'Diver', hue: hueOf( id ), look: cleanLook( p && p.look ), host: !! ( p && p.host === true ), self };
+			out[ id ] = { name: cleanName( p && p.name ) || 'Diver', hue: hueOf( id ), look: cleanLook( p && p.look ), gear: cleanGear( p && p.gear ), host: !! ( p && p.host === true ), self };
 
 		}
 
@@ -228,7 +258,7 @@ export class DiveRoom {
 
 		const room = this.room;
 		this.room = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [] };
 		if ( room ) await room.leave();
 
 	}
@@ -238,6 +268,7 @@ export class DiveRoom {
 	onPeople( fn ) { this._handlers.people.push( fn ); }
 	onError( fn ) { this._handlers.error.push( fn ); }
 	onWorld( fn ) { this._handlers.world.push( fn ); }
+	onShot( fn ) { this._handlers.shot.push( fn ); }
 
 	_emitPeople() {
 

@@ -32,6 +32,7 @@ export class NetPlay {
 		this._pose = {};
 		this.name = loadName();
 		this.look = myLook();
+		if ( game.spear ) game.spear.onShot = ( p, d, v ) => this.shot( p, d, v );
 		this._worldT = 0;
 		this._worldSent = null;
 		this._worldSentAt = - Infinity;
@@ -152,6 +153,8 @@ export class NetPlay {
 		} );
 		// the host's time and weather (never your own: the host's own writes don't come back)
 		room.onWorld( ( c ) => this.applyWorld( c ) );
+		room.onShot( ( id, shot ) => this.divers && this.divers.shot( id, shot ) );
+		this._gearKey = null;
 		this._worldSent = null;
 		room.onError( ( e ) => {
 
@@ -314,12 +317,32 @@ export class NetPlay {
 		if ( this.ui ) this.ui.update( dt );
 		if ( ! this.room ) return;
 		this._sendWorld( dt, now );
+		this._sendGear();
 		this._sendT -= dt;
 		if ( this._sendT > 0 ) return;
 		this._sendT = 1 / SEND_HZ;
 		// nobody to send to: skip it (the room still announces you to the relays)
 		if ( Object.keys( this.people ).length < 2 ) return;
 		this.room.sendPose( encodePose( this.myPose( now ), this._buf ) );
+
+	}
+
+	// your speargun (its length, bands and wood: the gear you bought) in your profile, when it changes
+	_sendGear() {
+
+		const sp = this.game.spear, g = sp && sp.gun && sp.gun.gear;
+		if ( ! g ) return;
+		const key = `${ g.gunM }/${ g.bands }/${ g.gunKind }`;
+		if ( key === this._gearKey ) return;
+		this._gearKey = key;
+		this.room.setGear( g );
+
+	}
+
+	// your shot (Spearfishing.onShot): the others see the shaft fly
+	shot( p, d, v ) {
+
+		if ( this.room && Object.keys( this.people ).length > 1 ) this.room.shoot( p, d, v );
 
 	}
 
@@ -333,6 +356,9 @@ export class NetPlay {
 		o.floating = !! p.floating;
 		o.gun = !! ( sp && sp.equipped );
 		o.blackout = !! ( sp && sp.phase === 'blackout' );
+		o.aim = !! ( sp && sp.equipped && sp.aiming );
+		o.loaded = sp && sp.gun ? sp.gun.bandsLoaded : 0;
+		o.shaftOut = !! ( sp && sp.gun && ! sp.gun.shaftHome );
 		o.duck = p.duck !== null && p.duck !== undefined;
 		o.speed = Math.hypot( p.velocity.x, p.velocity.y, p.velocity.z );
 		o.depth = Math.max( 0, ( p.waterH || 0 ) - p.position.y );

@@ -24,7 +24,9 @@ export { SUIT_COLOURS } from './Look.js';
 //   surface    floating still: hanging legs down, head out, arms out a little (a breathe-up)
 //   swimming   lying along the view, arms along the thighs, kicking with the speed
 //   streamline arms overhead, hands together: sprinting down (a duck dive / freefall)
-//   gun        arms forward (holding the speargun; the gun itself is the SpearGun's)
+//   gun        the right arm out along the view holding the speargun (aim: straight at the eye
+//              line; else a little lower), the left along the side; on land the gun hangs from the
+//              hand unless raised. The gun is mounted at gunMount (game/DiverGun.js)
 //   blackout   limp: arms hanging, head dropped, body drifting flat
 //   duck dive  d.duckDive() (or setPose( { duck: seconds } ) to drive its clock): the sequence in DUCK
 
@@ -113,6 +115,17 @@ export class Diver {
 			shoulder.add( upper, elbow );
 			this.body.add( shoulder );
 			this.arms.push( { s, shoulder, elbow, upper, lower } );
+			// the right hand holds a speargun here (game/DiverGun.js): the gun frame's +Y along the
+			// forearm toward the hand, its rail (+Z) on the back of the hand, the grip in the palm
+			if ( s < 0 ) { // s -1 is the right side (the figure faces +Z)
+
+				this.gunMount = new Group();
+				this.gunMount.name = 'DiverGunMount';
+				this.gunMount.position.set( 0.015, - FOREARM + 0.07, 0.1 );
+				this.gunMount.rotation.z = Math.PI;
+				elbow.add( this.gunMount );
+
+			}
 
 		}
 
@@ -146,7 +159,8 @@ export class Diver {
 		}
 
 		// what the diver is doing (setPose) and where the joints are now (eased in update)
-		this.want = { mode: 'walk', floating: true, pitch: 0, speed: 0, blackout: false, gun: false, sprint: false };
+		this.want = { mode: 'walk', floating: true, pitch: 0, speed: 0, blackout: false, gun: false, aim: false, sprint: false };
+		this.gunArm = 0; // the right arm holding the gun out along the view (1) or not (0), eased
 		this.lie = 0; // 0 upright (feet at the origin) .. 1 hanging from the float point
 		this.elev = Math.PI / 2; // the body axis (feet to head) above horizontal, radians
 		this.neckBend = 0;
@@ -335,7 +349,7 @@ export class Diver {
 			// is), one breaststroke pull out and down to the thighs, then a hand to the nose
 			if ( stage <= 2 ) { up = 1; bend = 0.02; } else if ( stage === 3 ) { up = 1 - f; out = Math.sin( f * Math.PI ) * 0.9; bend = 0.05; } else { nose = stage === 4 ? 1 : 1 - f; bend = 0.15; }
 
-		} else if ( w.gun ) { fwd = 1; bend = 0.35; } else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.38 * ( 1 - moving * 2 ); bend = 0.7; }
+		} else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.38 * ( 1 - moving * 2 ); bend = 0.7; }
 
 		const ar = ducking ? 8 : 4;
 		A.out = ease( A.out, out, dt, ar );
@@ -344,6 +358,12 @@ export class Diver {
 		A.limp = ease( A.limp, limp, dt, 2 );
 		A.bend = ease( A.bend, bend, dt, ar );
 		A.nose = ease( A.nose, nose, dt, 8 );
+		// the gun arm: out along the view in the water, and on land while aiming
+		const holding = !! w.gun && ! blackout && ! ducking && ( swim || w.aim );
+		this.gunArm = ease( this.gunArm, holding ? 1 : 0, dt, 6 );
+		// the view in the shoulder's frame: rotating the hanging arm (-Y) by this about X points it
+		// along the view (the body's +Y is at elevation elev on the view's heading)
+		const along = ( this.elev - pitch ) - Math.PI + ( w.aim ? 0 : 0.55 );
 		for ( const a of this.arms ) {
 
 			const sh = a.shoulder;
@@ -354,6 +374,15 @@ export class Diver {
 			sh.rotation.z = a.s * ( 0.06 + A.out * 1.1 + A.up * ( Math.PI + 0.24 ) + breathe ) * ( 1 - A.fwd ) + a.s * 0.1 * A.fwd;
 			sh.rotation.x = A.fwd * ( - Math.PI / 2 + 0.15 ) - A.out * 0.35 - A.limp * 0.5 + A.up * 0.1;
 			a.elbow.rotation.x = - A.bend * ( 1 - A.up ) * ( 1 - A.fwd ) - A.fwd * 0.2;
+			if ( a.s < 0 && this.gunArm > 0.001 ) {
+
+				const g = this.gunArm;
+				sh.rotation.x = MathUtils.lerp( sh.rotation.x, along, g );
+				sh.rotation.z = MathUtils.lerp( sh.rotation.z, 0.1, g ); // in toward the body's line: the gun under the eyes
+				a.elbow.rotation.x = MathUtils.lerp( a.elbow.rotation.x, w.aim ? - 0.05 : - 0.25, g );
+
+			}
+
 			// the right hand to the nose: the upper arm forward and up, the elbow folded
 			if ( a.s > 0 && A.nose > 0.001 ) {
 

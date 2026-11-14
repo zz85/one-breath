@@ -34,7 +34,9 @@ const appUI = {
 };
 const app = { qs, scene, camera, player, settings, ui: appUI, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
 const me = { diver: { look: null, setLook( l ) { this.look = l; } } };
-const game = { app, stand: { material: null }, spear: null, me };
+// a stand-in for the speargun game: what NetPlay reads of it (the test sets these)
+const spear = { equipped: false, aiming: false, phase: 'home', onShot: null, gun: { bandsLoaded: 0, shaftHome: true, gear: { gunM: 0.9, bands: 2, gunKind: 'teak' } } };
+const game = { app, stand: { material: null }, spear, me };
 window.__game = game;
 setInterval( () => { settings.timeOfDay = ( settings.timeOfDay + settings.timeSpeed * 0.1 ) % 24; }, 100 );
 const np = window.__np = new NetPlay( game );

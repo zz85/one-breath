@@ -1,7 +1,7 @@
 // Diving with friends, without the network: the pose codec, the playback buffer, the room's
 // chat and name rules, and how a remote diver is drawn from a pose.
 //   node test/net-pose.mjs
-import { encodePose, decodePose, PoseBuffer, POSE_LEN, hueOf, makeDiveCode, cleanDiveCode, cleanName, cleanChat } from '../src/net/Pose.js';
+import { encodePose, decodePose, PoseBuffer, POSE_LEN, hueOf, makeDiveCode, cleanDiveCode, cleanName, cleanChat, cleanGear, cleanShot } from '../src/net/Pose.js';
 import { DiveRoom } from '../src/net/DiveRoom.js';
 import { RemoteDivers } from '../src/game/RemoteDivers.js';
 import { Group, Vector3 } from '../src/engine/index.js';
@@ -28,6 +28,16 @@ check( decodePose( bad ) === null, 'NaN: not a pose' );
 const far = encodePose( pose ); far[ 1 ] = 1e9;
 check( decodePose( far ) === null, 'a position off the map: not a pose' );
 check( decodePose( { x: 1 } ) === null && decodePose( 'hi' ) === null, 'JSON or text: not a pose' );
+
+const armed = decodePose( encodePose( { ...pose, gun: true, aim: true, loaded: 2, shaftOut: false, duck: true } ) );
+check( armed.gun && armed.aim && armed.loaded === 2 && ! armed.shaftOut && armed.duck && ! armed.blackout, 'the gun: out, raised, two bands loaded' );
+const shotPose = decodePose( encodePose( { ...pose, gun: true, aim: false, loaded: 0, shaftOut: true } ) );
+check( shotPose.gun && ! shotPose.aim && shotPose.loaded === 0 && shotPose.shaftOut, 'after the shot: bands off, the shaft out' );
+check( decodePose( encodePose( { ...pose, loaded: 9 } ) ).loaded === 3, 'bands loaded: 3 at most on the wire' );
+check( JSON.stringify( cleanGear( { gunM: 1.1, bands: 2, gunKind: 'carbon', x: 1 } ) ) === '{"gunM":1.1,"bands":2,"gunKind":"carbon"}' && cleanGear( { gunM: 9 } ) === null && cleanGear( 'gun' ) === null && cleanGear( { gunM: 0.9, gunKind: 'laser' } ).gunKind === 'wood', 'a gun in a profile: length, bands, wood; nothing else' );
+const sh = cleanShot( { p: [ 1, - 3, 2 ], d: [ 0, 0, - 2 ], v: 18 } );
+check( sh && sh.d[ 2 ] === - 1 && sh.v === 18, 'a shot: from a point, along a direction (normalized), at a speed' );
+check( cleanShot( { p: [ 1, 2 ], d: [ 0, 0, 1 ], v: 5 } ) === null && cleanShot( { p: [ 0, 0, 0 ], d: [ 0, 0, 1 ], v: 500 } ) === null && cleanShot( { p: [ 0, 0, 0 ], d: [ 0, 0, 0 ], v: 5 } ) === null, 'a bad shot is dropped' );
 
 // ---- playback: poses sent every 1/12 s arrive with jitter; drawn 0.12 s behind, smoothly
 const pb = new PoseBuffer();
@@ -163,6 +173,15 @@ check( room.stateSent === undefined, 'a guest can\'t send time and weather' );
 net.setLook( { suit: 0x1b2a44, accent: 0xff7a1a, fins: 0x1f6fd1, junk: 5 } );
 room._arrive( 'u1', 'Ben' );
 check( people.me.look && people.me.look.suit === 0x1b2a44 && ! ( 'junk' in people.me.look ), 'your suit goes in your profile, colours only' );
+net.setGear( { gunM: 0.9, bands: 1, gunKind: 'teak' } );
+check( people.me.gear && people.me.gear.gunM === 0.9, 'your speargun goes in your profile' );
+const shotsHeard = [];
+net.onShot( ( id, sh ) => shotsHeard.push( sh ) );
+room.actions.shot.handler( { p: [ 1, - 2, 3 ], d: [ 0, 0, - 1 ], v: 17 }, { userId: 'u9' } );
+room.actions.shot.handler( { p: 'x' }, { userId: 'u9' } );
+check( shotsHeard.length === 1 && shotsHeard[ 0 ].v === 17, 'a shot from another diver comes through; junk doesn\'t' );
+net.shoot( new Vector3( 1, - 2, 3 ), new Vector3( 0, 0, - 1 ), 18.12345 );
+check( room.actions.shot.sent[ 0 ].v === 18.123 && room.actions.shot.sent[ 0 ].d[ 2 ] === - 1, 'your shot goes out' );
 room._go( 'u9' );
 check( net.hostId === null, 'the host leaves: nobody hosts' );
 room._go( 'u1' );
@@ -203,6 +222,36 @@ for ( let i = 0; i < 120; i ++ ) divers.update( 1 / 60, 6.5 + i / 60, null );
 const h3 = d.headWorld( new Vector3() );
 const hip = new Vector3().setFromMatrixPosition( d.legs[ 0 ].matrixWorld );
 check( hip.y - h3.y > 0.3, `diving down: head first, hips ${ ( hip.y - h3.y ).toFixed( 2 ) } m above the head` );
+// his speargun: out, aimed straight ahead (yaw 0 looks -z), bands loaded
+for ( let i = 0; i < 6; i ++ ) divers.pose( 'u1', { ...dive, gun: false, t: 5.5 + i / 12 }, 8.4 + i / 12 );
+for ( let i = 0; i < 30; i ++ ) divers.update( 1 / 60, 8.9 + i / 60, null );
+check( ! d.gun.group.visible, 'no gun while he hasn\'t taken it out' );
+divers.setPeople( { me: { name: 'Ana', hue: 0.2, self: true }, u1: { name: 'Ben', hue: 0.6, self: false, gear: { gunM: 1.1, bands: 2, gunKind: 'carbon' } } } );
+check( d.gun.gear.gunM === 1.1 && d.gun.gear.bands === 2 && d.gun.gear.gunKind === 'carbon', 'his gun is his gear: a 110 cm carbon gun, two bands' );
+for ( let i = 0; i < 24; i ++ ) divers.pose( 'u1', { ...dive, pitch: 0, gun: true, aim: true, loaded: 2, t: 6 + i / 12 }, 9 + i / 12 );
+for ( let i = 0; i < 120; i ++ ) divers.update( 1 / 60, 10.5 + i / 60, null );
+d.diver.group.updateMatrixWorld( true );
+const butt = new Vector3( 0, 0, 0 ).applyMatrix4( d.gun.group.matrixWorld );
+const muzzle = new Vector3( 0, 1.1, 0 ).applyMatrix4( d.gun.group.matrixWorld );
+const eye = d.diver.eyeWorld( new Vector3() );
+const dir = muzzle.clone().sub( butt ).normalize();
+check( d.gun.group.visible && dir.z < - 0.95 && Math.abs( dir.y ) < 0.15, `he takes it out and aims: the barrel points where he looks (${ dir.toArray().map( ( x ) => x.toFixed( 2 ) ) })` );
+check( butt.z < eye.z - 0.2 && butt.y < eye.y && butt.y > eye.y - 0.25, 'held out in front of his eyes, a little below them' );
+check( d.gun.bands[ 0 ].loaded.visible && d.gun.bands[ 1 ].loaded.visible && d.gun.shaft.visible && ! d.gun.bands[ 0 ].slack.visible, 'both bands stretched, the shaft on the rail' );
+// he shoots: the shaft leaves his gun and flies on
+divers.shot( 'u1', { p: [ muzzle.x, muzzle.y, muzzle.z ], d: [ 0, 0, - 1 ], v: 18 } );
+for ( let i = 0; i < 12; i ++ ) divers.pose( 'u1', { ...dive, pitch: 0, gun: true, aim: true, loaded: 0, shaftOut: true, t: 8 + i / 12 }, 11 + i / 12 );
+for ( let i = 0; i < 60; i ++ ) divers.update( 1 / 60, 12.5 + i / 60, null );
+const flying = divers.shots[ 0 ] && divers.shots[ 0 ].shaft.mesh.position;
+check( flying && flying.z < muzzle.z - 4 && flying.z > muzzle.z - 9, `he shoots: his shaft flies out ahead and slows (${ flying ? ( muzzle.z - flying.z ).toFixed( 1 ) : '-' } m in 1 s)` );
+check( ! d.gun.shaft.visible && d.gun.bands[ 0 ].slack.visible && ! d.gun.bands[ 0 ].loaded.visible, 'his rail is empty and the bands hang slack' );
+for ( let i = 0; i < 12; i ++ ) divers.pose( 'u1', { ...dive, pitch: 0, gun: true, aim: false, loaded: 0, shaftOut: false, t: 10 + i / 12 }, 13 + i / 12 );
+for ( let i = 0; i < 60; i ++ ) divers.update( 1 / 60, 14.5 + i / 60, null );
+check( divers.shots.length === 0 && d.gun.shaft.visible, 'he reels it in: the flying shaft goes, his is on the rail again' );
+for ( let i = 0; i < 12; i ++ ) divers.pose( 'u1', { ...dive, pitch: 0, gun: false, t: 12 + i / 12 }, 15 + i / 12 );
+for ( let i = 0; i < 60; i ++ ) divers.update( 1 / 60, 16.5 + i / 60, null );
+check( ! d.gun.group.visible, 'he puts it away: no gun' );
+
 divers.setPeople( { me: { name: 'Ana', hue: 0.2, self: true }, u1: { name: 'Ben', hue: 0.6, self: false, look: { suit: 0x1f4f7a, accent: 0xffd21f, fins: 0x1f6fd1 } } } );
 check( d.diver.look.suit === 0x1f4f7a && d.diver.look.fins === 0x1f6fd1, 'he picks a blue suit and blue fins: his diver wears them' );
 const torsoColour = d.diver.torso.geometry.attributes.color.array.slice( 0, 3 );

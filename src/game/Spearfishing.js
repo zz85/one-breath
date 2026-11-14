@@ -447,6 +447,8 @@ export class Spearfishing {
 		this.shaftStuck = false;
 		this.flightT = 0;
 		this.sfx.shot( v0 / 18, true );
+		// the dive room shows the shot to the others (game/NetPlay.js)
+		if ( this.onShot ) this.onShot( gun.shaftPos, gun.shaftDir, v0 );
 		// the snap of the bands through the water: fish nearby flinch
 		if ( this.fish ) this.fish.scare( gun.muzzle, 3.5, 0.5 );
 

@@ -65,6 +65,16 @@ await ben.screenshot( { path: '/tmp/netplay-suit.png', clip: { x: 0, y: 0, width
 await ben.keyboard.press( 'Escape' );
 check( await ben.evaluate( () => document.querySelector( '.nu-pop' ).hidden ), 'Esc closes the picker' );
 
+// Ben takes out his speargun, loads both bands and aims: Ana sees it in his hand
+await ben.evaluate( () => Object.assign( window.__game.spear, { equipped: true, aiming: true } ) && ( window.__game.spear.gun.bandsLoaded = 2 ) );
+check( await wait( ana, () => { const d = [ ...window.__np.divers.divers.values() ][ 0 ]; return d && d.gun.group.visible && d.pose.aim && d.gun.bands[ 1 ].loaded.visible && d.gun.shaft.visible; }, 10000 ), 'Ben draws his gun and aims: Ana sees it raised, both bands loaded' );
+check( await ana.evaluate( () => JSON.stringify( [ ...window.__np.divers.divers.values() ][ 0 ].gun.gear ) ) === '{"gunM":0.9,"bands":2,"gunKind":"teak"}', 'his own gun: 90 cm, teak, two bands' );
+await ben.evaluate( () => { const s = window.__game.spear; s.gun.bandsLoaded = 0; s.gun.shaftHome = false; s.onShot( { x: 0, y: - 0.1, z: - 12.9 }, { x: 0, y: 0, z: 1 }, 18 ); } );
+check( await wait( ana, () => window.__np.divers.shots.length === 1 && window.__np.divers.shots[ 0 ].shaft.mesh.position.z > - 11 ), 'he shoots towards her: his shaft flies her way' );
+check( await wait( ana, () => { const d = [ ...window.__np.divers.divers.values() ][ 0 ]; return ! d.gun.shaft.visible && d.gun.bands[ 0 ].slack.visible; }, 5000 ), 'his rail is empty, the bands hang slack' );
+await ben.evaluate( () => { const s = window.__game.spear; s.gun.shaftHome = true; s.equipped = false; s.aiming = false; } );
+check( await wait( ana, () => window.__np.divers.shots.length === 0 && ! [ ...window.__np.divers.divers.values() ][ 0 ].gun.group.visible, 8000 ), 'he reels in and puts it away: shaft and gun gone' );
+
 // Ben chats: Enter opens the box, he types, Enter sends
 await ben.keyboard.press( 'Enter' );
 check( await wait( ben, () => document.activeElement?.classList.contains( 'nu-input' ), 3000 ), 'Ben: Enter opens the chat box' );

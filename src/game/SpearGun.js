@@ -19,9 +19,9 @@ import { createPropMaterial, createLineMaterial, PAT } from './GameMaterials.js'
 // The bands are separate meshes per band and state (stretched to the shaft's fins, or hanging slack
 // from the muzzle), shown by the controller's bandsLoaded.
 export const SHAFT_EXTRA = 0.28; // the shaft sticks out ahead of the muzzle by about this much
-const SHAFT_TAIL = 0.06; // and its tail sits in the trigger mechanism, this far ahead of the butt
-const GRIP_Y = 0.16; // the hand holds the grip here
-const RAIL_Z = 0.026; // shaft axis above the barrel's axis
+export const SHAFT_TAIL = 0.06; // and its tail sits in the trigger mechanism, this far ahead of the butt
+export const GRIP_Y = 0.16; // the hand holds the grip here
+export const RAIL_Z = 0.026; // shaft axis above the barrel's axis
 const LINE_SEGS = 40;
 // where the loaded bands hook the shaft's shark fins along the barrel: front band, rear band
 const finY = ( gunM, k ) => gunM * 0.45 - k * 0.05;
@@ -301,7 +301,7 @@ const DYNEEMA = { color: 0xd8d4c4, rough: 0.8, metal: 0, pattern: PAT.braid };
 const LATEX = { color: 0xb86a1c, rough: 0.45, metal: 0, pattern: PAT.rubber }; // amber latex
 const LATEX_BLACK = { color: 0x1a1a1c, rough: 0.5, metal: 0, pattern: PAT.rubber };
 
-function buildGunGeometry( L, kind ) {
+export function buildGunGeometry( L, kind ) {
 
 	const parts = [];
 	const M = ( x, y, z, rx = 0, ry = 0, rz = 0, sx = 1, sy = sx, sz = sx ) => mat4( x, y, z, rx, ry, rz, sx, sy, sz );
@@ -390,7 +390,7 @@ function buildGunGeometry( L, kind ) {
 }
 
 // band k: 0 front, 1 rear. loaded: stretched back to the shaft's fins; else hanging off the muzzle
-function buildBandGeometry( L, k, loaded, kind ) {
+export function buildBandGeometry( L, k, loaded, kind ) {
 
 	const parts = [];
 	const V = ( x, y, z ) => new Vector3( x, y, z );
