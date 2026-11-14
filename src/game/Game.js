@@ -73,6 +73,7 @@ export class Game {
 		this.fallDamage.onDeath = () => setTimeout( () => this.toast( 'You fell to your death. You wake at the village, bruised', 5000 ), 4800 );
 
 		// diving with friends: ?dive=<code> joins their room (game/NetPlay.js)
+		this.deferJoin = true; // main.js calls net.start() from the start screen
 		this.net = typeof window !== 'undefined' && typeof RTCPeerConnection !== 'undefined' ? new NetPlay( this ) : null;
 
 	}

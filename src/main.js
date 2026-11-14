@@ -39,10 +39,18 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 	} else app.start();
 	// the mode menu, unless the URL chose a mode (?mode=, ?hunt)
 	const game = app.game;
-	if ( game && ! game.mode.fromURL ) ui.setModes( MODES, DIFFICULTY, game.mode );
+	if ( game && ! game.mode.fromURL ) {
+
+		ui.setModes( MODES, DIFFICULTY, game.mode );
+		// Multiplayer: host a dive or join one (an invite link opens it with the code filled in)
+		if ( game.net ) ui.setMultiplayer( { code: game.net.linkCode || '', name: game.net.name } );
+
+	}
+
 	ui.showStartOverlay( ( choice ) => {
 
 		if ( game && choice ) game.setMode( choice );
+		if ( game && game.net ) game.net.start( choice && choice.multi );
 		app.input.requestLock();
 		if ( app.audio ) app.audio.resume();
 

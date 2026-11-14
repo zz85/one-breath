@@ -2538,6 +2538,26 @@ body {
 }
 
 .tw-diff[aria-checked="true"] { background: rgba(var(--tw-aqua-rgb), 0.3); }
+
+/* Multiplayer: an outlined start button, and its panel under the modes */
+.tw-start-modes .tw-start-cta.is-multi { background: rgba(4, 22, 30, 0.45); box-shadow: inset 0 0 0 1px rgba(var(--tw-aqua-rgb), 0.7); color: #fff; }
+.tw-start-modes .tw-start-cta.is-multi.is-open { background: rgba(var(--tw-aqua-rgb), 0.28); }
+.tw-start-mp { display: flex; flex-direction: column; align-items: center; gap: calc(10 * var(--tw-u)); margin-top: calc(14 * var(--tw-u));
+	padding: calc(14 * var(--tw-u)) calc(18 * var(--tw-u)); border-radius: calc(16 * var(--tw-u)); background: rgba(4, 22, 30, 0.6);
+	-webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); max-width: min(94vw, calc(620 * var(--tw-u))); cursor: default; }
+.tw-start-mp[hidden] { display: none; }
+.tw-mp-row { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: calc(8 * var(--tw-u)); font-size: var(--tw-fs-md, 13px); }
+.tw-mp-row > span { opacity: 0.8; }
+.tw-start-mp input { padding: calc(7 * var(--tw-u)) calc(12 * var(--tw-u)); border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.25);
+	background: rgba(0, 0, 0, 0.35); color: #fff; font: inherit; font-size: var(--tw-fs-md, 13px); outline: none; width: calc(180 * var(--tw-u)); }
+.tw-start-mp input:focus { border-color: var(--tw-aqua); }
+.tw-mp-btn { padding: calc(7 * var(--tw-u)) calc(16 * var(--tw-u)) !important; border-radius: 999px !important; background: rgba(var(--tw-aqua-rgb), 0.3) !important;
+	color: #fff !important; font-weight: 600 !important; cursor: pointer; }
+.tw-mp-btn:hover:not(:disabled) { background: rgba(var(--tw-aqua-rgb), 0.5) !important; }
+.tw-mp-btn:disabled { opacity: 0.45; cursor: default; }
+.tw-mp-or { opacity: 0.6; }
+.tw-mp-note { font-size: var(--tw-fs-sm, 12px); opacity: 0.7; text-align: center; max-width: calc(460 * var(--tw-u)); }
+@media (max-width: 640px) { .tw-start-mp input { width: min(56vw, 220px); } .tw-mp-or { flex-basis: 100%; text-align: center; } }
 .tw-start.has-modes { cursor: default; }
 
 @media (max-width: 640px) {

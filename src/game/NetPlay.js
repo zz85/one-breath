@@ -26,8 +26,21 @@ export class NetPlay {
 		this._buf = new Float32Array( 10 );
 		this._pose = {};
 		this.name = loadName();
-		const code = cleanDiveCode( this.app.qs && this.app.qs.get( 'dive' ) );
-		if ( code ) this.join( code );
+		// an invite link's code: joined once the player starts (start()), so the start screen can
+		// ask their name first. A page with no start screen (tests) joins at once.
+		this.linkCode = cleanDiveCode( this.app.qs && this.app.qs.get( 'dive' ) );
+		if ( this.linkCode && ! game.deferJoin ) this.join( this.linkCode );
+
+	}
+
+	// the start screen's pick: multi { host } makes a dive, { code } joins one, and with neither
+	// an invite link's code is joined anyway. multi.name sets your name first.
+	start( multi ) {
+
+		if ( multi && multi.name ) this.setName( multi.name, true );
+		if ( multi && multi.host ) return this.invite();
+		const code = ( multi && cleanDiveCode( multi.code ) ) || this.linkCode;
+		if ( code && code !== this.code ) return this.join( code );
 
 	}
 
@@ -188,10 +201,10 @@ export class NetPlay {
 
 	}
 
-	setName( name ) {
+	setName( name, quiet = false ) {
 
 		const n = cleanName( name );
-		if ( ! n ) return;
+		if ( ! n || n === this.name ) return;
 		this.name = n;
 		try {
 
@@ -200,7 +213,7 @@ export class NetPlay {
 		} catch ( e ) { /* private mode */ }
 
 		if ( this.room ) this.room.setName( n );
-		if ( this.ui ) this.ui.system( `You're ${ n } now` );
+		if ( this.ui && ! quiet ) this.ui.system( `You're ${ n } now` );
 
 	}
 

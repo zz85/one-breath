@@ -12,6 +12,16 @@ let uidCounter = 0;
 const uid = ( p = 'tw' ) => `${ p }-${ ++ uidCounter }`;
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', '\'': '&#39;' };
+// a dive code from what a player typed or pasted: the code itself, or an invite link holding ?dive=
+function readCode( s ) {
+
+	s = String( s || '' ).trim();
+	const m = /[?&]dive=([a-z0-9]+)/i.exec( s );
+	const c = ( m ? m[ 1 ] : s ).toLowerCase().replace( /[^a-z0-9]/g, '' ).slice( 0, 16 );
+	return c.length >= 4 ? c : null;
+
+}
+
 const esc = ( s ) => String( s ?? '' ).replace( /[&<>"']/g, ( c ) => ESC[ c ] );
 
 // Tiny element factory: h( 'button', 'cls', { type: 'button', text: 'Hi' } )
@@ -2199,6 +2209,7 @@ export class UI {
 				<div class="tw-start-sub">Langpao Island</div>
 				<div class="tw-start-diff" role="radiogroup" aria-label="Difficulty" hidden></div>
 				<div class="tw-start-modes" hidden></div>
+				<div class="tw-start-mp" hidden></div>
 				<button type="button" class="tw-start-cta"><span class="tw-start-pulse" aria-hidden="true"></span>${ icon( 'mouse' ) }<span>Click to explore</span></button>
 				<div class="tw-start-keys">
 					<span><span class="tw-wasd"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Move</span>
@@ -3241,6 +3252,75 @@ export class UI {
 
 	}
 
+	// the Multiplayer button after the modes, and its panel: your name, Host a new dive, or Join with
+	// a code or a pasted invite link. Host and Join start the game in the mode that has the pulse
+	// (the last played), with ui.modeChoice.multi = { host: true } or { code }. mp { code, name }: an
+	// invite link's code opens the panel with it filled in, and Enter joins.
+	setMultiplayer( { code = '', name = '' } = {} ) {
+
+		const el = this.startEl, M = el.querySelector( '.tw-start-modes' ), P = el.querySelector( '.tw-start-mp' );
+		const proto = M.querySelector( '.tw-start-cta[data-mode]' );
+		if ( ! proto ) return;
+		const b = proto.cloneNode( true );
+		delete b.dataset.mode;
+		b.dataset.multi = 'open';
+		b.disabled = false;
+		b.removeAttribute( 'title' );
+		b.querySelector( '.tw-start-soon' )?.remove();
+		b.querySelector( '.tw-start-pulse' )?.remove();
+		b.classList.add( 'is-multi' );
+		b.querySelector( 'span:last-child' ).textContent = 'Multiplayer';
+		M.append( b );
+		P.innerHTML = `
+			<label class="tw-mp-row"><span>Your name</span><input class="tw-mp-name" type="text" maxlength="20" autocomplete="nickname" spellcheck="false"></label>
+			<div class="tw-mp-row">
+				<button type="button" class="tw-mp-btn is-host" data-multi="host">Host a new dive</button>
+				<span class="tw-mp-or">or</span>
+				<input class="tw-mp-code" type="text" maxlength="200" placeholder="code or invite link" autocomplete="off" spellcheck="false" aria-label="Dive code">
+				<button type="button" class="tw-mp-btn" data-multi="join" disabled>Join</button>
+			</div>
+			<div class="tw-mp-note"></div>`;
+		const nameIn = P.querySelector( '.tw-mp-name' ), codeIn = P.querySelector( '.tw-mp-code' ), joinBtn = P.querySelector( '[data-multi="join"]' );
+		nameIn.value = name;
+		codeIn.value = code;
+		const note = () => {
+
+			const m = this.modeChoice || {};
+			const label = proto.parentElement.querySelector( `.tw-start-cta[data-mode="${ m.mode }"] span:last-child` );
+			joinBtn.disabled = ! readCode( codeIn.value );
+			P.querySelector( '.tw-mp-note' ).textContent = `You dive in ${ label ? label.textContent : 'your last mode' }. Hosting copies an invite link to send your friends. Up to 8 divers.`;
+
+		};
+		codeIn.addEventListener( 'input', note );
+		this._mp = { panel: P, button: b, nameIn, codeIn, note };
+		note();
+		if ( code ) this._openMultiplayer( true );
+
+	}
+
+	_openMultiplayer( on = true, focus = false ) {
+
+		const mp = this._mp;
+		if ( ! mp ) return;
+		mp.panel.hidden = ! on;
+		mp.button.classList.toggle( 'is-open', on );
+		mp.button.setAttribute( 'aria-expanded', String( on ) );
+		mp.note();
+		if ( on && focus ) ( mp.nameIn.value ? mp.codeIn : mp.nameIn ).focus();
+
+	}
+
+	// what the panel asks for, or null where it can't start yet (no code to join)
+	_multiChoice( action ) {
+
+		const mp = this._mp;
+		const name = mp.nameIn.value.trim();
+		if ( action === 'host' ) return { host: true, name };
+		const code = readCode( mp.codeIn.value );
+		return code ? { code, name } : null;
+
+	}
+
 	showStartOverlay( onStart ) {
 
 		if ( this._startPromise ) return this._startPromise;
@@ -3255,9 +3335,20 @@ export class UI {
 
 			const go = ( e ) => {
 
+				let multi = null;
 				if ( e.type === 'keydown' ) {
 
-					if ( e.key !== 'Enter' && e.code !== 'Space' ) return;
+					// typing in the multiplayer panel: Enter hosts or joins, every other key types
+					const typing = e.target && e.target.tagName === 'INPUT' && el.contains( e.target );
+					if ( typing ) {
+
+						if ( e.key !== 'Enter' ) return;
+						multi = this._multiChoice( e.target.classList.contains( 'tw-mp-code' ) || this._mp.codeIn.value.trim() ? 'join' : 'host' );
+						if ( ! multi ) return;
+
+					} else if ( e.key !== 'Enter' && e.code !== 'Space' ) return;
+					// an invite link's panel is open: Enter joins that dive
+					else if ( this._mp && ! this._mp.panel.hidden && readCode( this._mp.codeIn.value ) ) multi = this._multiChoice( 'join' );
 					e.preventDefault();
 					e.stopPropagation();
 
@@ -3266,11 +3357,30 @@ export class UI {
 				// with the mode menu, only the start button starts (a click beside a card shouldn't)
 				if ( e.type === 'click' && el.classList.contains( 'has-modes' ) ) {
 
-					const b = e.target.closest( '.tw-start-cta[data-mode]' );
-					if ( ! b || b.disabled ) return;
-					this.modeChoice.mode = b.dataset.mode;
+					const m = e.target.closest( '[data-multi]' );
+					if ( m ) {
+
+						if ( m.dataset.multi === 'open' ) {
+
+							this._openMultiplayer( this._mp.panel.hidden, true );
+							return;
+
+						}
+
+						multi = this._multiChoice( m.dataset.multi );
+						if ( ! multi ) return;
+
+					} else {
+
+						const b = e.target.closest( '.tw-start-cta[data-mode]' );
+						if ( ! b || b.disabled ) return;
+						this.modeChoice.mode = b.dataset.mode;
+
+					}
 
 				}
+
+				this.modeChoice.multi = multi;
 				el.removeEventListener( 'click', go );
 				window.removeEventListener( 'keydown', go, true );
 				this._start = false;
