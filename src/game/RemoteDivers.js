@@ -29,6 +29,7 @@ export class RemoteDivers {
 		this.material = material;
 		this.divers = new Map();
 		this.shots = []; // { id, shaft: FlyingShaft }
+		this.positions = []; // where each other diver is now (the fish flee from them too)
 		this.people = {};
 		this.layer = null;
 		if ( root && typeof document !== 'undefined' ) {
@@ -138,9 +139,11 @@ export class RemoteDivers {
 			return keep;
 
 		} );
+		let n = 0;
 		for ( const d of this.divers.values() ) {
 
 			d.update( dt, now );
+			if ( d.group.visible && d.buffer.age( now ) < 3 ) ( this.positions[ n ++ ] ||= new Vector3() ).copy( d._pos );
 			if ( ! d.tag ) continue;
 			const away = d.buffer.age( now ) > 3;
 			d.tag.classList.toggle( 'is-away', away );
@@ -168,6 +171,8 @@ export class RemoteDivers {
 			d.tag.style.transform = `translate(${ ( ( _v.x + 1 ) / 2 * w ).toFixed( 1 ) }px, ${ ( ( 1 - _v.y ) / 2 * h ).toFixed( 1 ) }px) translate(-50%, -100%)`;
 
 		}
+
+		this.positions.length = n;
 
 	}
 

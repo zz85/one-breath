@@ -52,6 +52,17 @@ await ben.evaluate( () => { window.__game.app.settings.timeOfDay = 22; window.__
 // Ben can't set it: his own change stands only until the host sends again
 check( await wait( ben, () => window.__game.app.ui.weather === 'Storm', 12000 ), 'Ben changes his own weather: the host\'s comes back' );
 
+// the host's animals: Ana's fish and whale reach Ben, a few times a second; Ben sends none
+check( await wait( ben, () => window.__life.fishIn.length >= 5 && window.__life.whaleIn.length >= 1, 8000 ), 'Ana (host) sends her big animals and whale: Ben\'s game takes them' );
+const lifeIn = await ben.evaluate( () => ( { last: window.__life.fishIn.at( - 1 ), whale: window.__life.whaleIn.at( - 1 ) } ) );
+check( lifeIn.last.a[ 0 ] === 7 && lifeIn.last.a.length === 12 && lifeIn.last.age >= 0 && lifeIn.last.age < 1.5, `the fish arrive as sent, ${ ( lifeIn.last.age * 1000 ).toFixed( 0 ) } ms old` );
+check( lifeIn.whale.s.u > 100 && lifeIn.whale.s.state === 'cruise', 'and her whale' );
+check( await ana.evaluate( () => window.__life.fishIn.length === 0 ), 'Ana takes nobody\'s animals: she runs them' );
+check( await ben.evaluate( () => Array.isArray( window.__life.others ) ) && await wait( ana, () => window.__life.others && window.__life.others.length === 1 ), 'each game knows where the other diver is (the fish flee from them too)' );
+// Ben spears Ana's whale: hers sounds
+await ben.evaluate( () => window.__game.spear.onWhaleStartle( - 1 ) );
+check( await wait( ana, () => window.__life.startled[ 0 ] === - 1, 8000 ), 'Ben hits the whale: on Ana\'s side it startles and sounds' );
+
 // Ben's suit: Suit opens the picker, a swatch changes it for him and for Ana
 await ben.getByRole( 'button', { name: 'Suit' } ).click();
 await ben.click( '[aria-label="Suit Ocean"]' );

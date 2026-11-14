@@ -32,7 +32,16 @@ const appUI = {
 	setWeather( n ) { this.setConditions( { ...SEA[ n ], clouds: n === 'Storm' ? 0.95 : 0.42 } ); },
 	get weather() { return Object.keys( SEA ).find( ( k ) => SEA[ k ].wind === cond.wind ); },
 };
-const app = { qs, scene, camera, player, settings, ui: appUI, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
+// stand-ins for the reef's fish and the whale: what NetPlay sends and takes of them
+const life = window.__life = { fishIn: [], whaleIn: [], startled: [], others: null, n: 0 };
+const reef = { fish: {
+	netState: () => new Float32Array( [ 7, 0, ++ life.n, - 5, 120, 0, - 5, 130, 1, 0, 0.5, 0 ] ),
+	applyNet: ( a, age ) => { life.fishIn.push( { a: Array.from( a ), age } ); return 1; },
+	clearNet: () => { life.cleared = true; },
+	set others( v ) { life.others = v; }, get others() { return life.others; },
+} };
+const whale = { brain: { netState: () => ( { u: 100 + life.n, y: - 9, state: 'cruise', seq: null } ), applyNet: ( s, age ) => { life.whaleIn.push( { s, age } ); return true; }, startle: ( side ) => life.startled.push( side ) } };
+const app = { qs, scene, camera, player, settings, ui: appUI, reef, whale, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
 const me = { diver: { look: null, setLook( l ) { this.look = l; } } };
 // a stand-in for the speargun game: what NetPlay reads of it (the test sets these)
 const spear = { equipped: false, aiming: false, phase: 'home', onShot: null, gun: { bandsLoaded: 0, shaftHome: true, gear: { gunM: 0.9, bands: 2, gunKind: 'teak' } } };

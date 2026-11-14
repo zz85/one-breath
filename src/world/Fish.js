@@ -32,6 +32,25 @@ import { FrameUniforms } from '../engine/render/Frame.js';
 // motion vectors.
 
 const TAU = Math.PI * 2;
+// the dive room's shared animals (netState / applyNet): these species, each animal of a group of
+// NET_FISH or fewer, a bigger school (the bait ball) by its centre
+const NET_SPECIES = new Set( [ 'bait', 'barracuda', 'grouper', 'jack', 'eagleRay', 'stingray', 'turtle', 'tarpon' ] );
+const NET_FISH = 10;
+const NET_FREE = 3; // s without the host's word: the group swims free again
+const NET_JUMP = 12; // m: further off than this, an animal goes straight to the host's place
+const nearestTo = ( list, c ) => {
+
+	let best = list[ 0 ], bd = Infinity;
+	for ( const p of list ) {
+
+		const d = ( p.x - c.x ) ** 2 + ( p.y - c.y ) ** 2 + ( p.z - c.z ) ** 2;
+		if ( d < bd ) { bd = d; best = p; }
+
+	}
+
+	return best;
+
+};
 const CEILING = - 0.7; // reef fish stay below this (m)
 const FLOOR_CLEARANCE = 0.18; // minimum above the reef / seabed (m)
 const RANGE = 45; // draw distance (m)
@@ -662,6 +681,21 @@ export class FishSchools {
 
 		}
 
+		// the other divers in a dive room (game/NetPlay.js sets `others`): fish near any of them
+		// are simulated, and flee from whichever diver is nearest
+		const others = this.others;
+		const threats = this._threats || ( this._threats = [] );
+		threats.length = 0;
+		if ( threat ) threats.push( threat );
+		if ( others ) for ( const o of others ) if ( o.y < - 0.1 ) threats.push( o );
+		const near = ( g, r ) => {
+
+			if ( ! player ) return true;
+			if ( Math.hypot( g.center.x - player.x, g.center.z - player.z ) < r ) return true;
+			if ( others ) for ( const o of others ) if ( Math.hypot( g.center.x - o.x, g.center.z - o.z ) < r ) return true;
+			return false;
+
+		};
 		let any = false;
 		for ( const g of this.groups ) {
 
@@ -672,7 +706,7 @@ export class FishSchools {
 				g.active = !! ( w && w.ready ) && ( ! player || w.brain.position.distanceTo( player ) < SIM_RANGE + 20 );
 				if ( g.active && ! was ) this.attachEscort( g );
 
-			} else g.active = ! player || Math.hypot( g.center.x - player.x, g.center.z - player.z ) < SIM_RANGE + g.radius;
+			} else g.active = near( g, SIM_RANGE + g.radius );
 			if ( g.active && ! was ) this.resume( g );
 			any = any || g.active;
 
@@ -684,9 +718,174 @@ export class FishSchools {
 		this.prev.set( this.pos );
 		const steps = dt > 1 / 30 ? Math.min( 3, Math.ceil( dt * 30 ) ) : 1;
 		const h = dt / steps;
-		if ( dt > 0 ) for ( let k = 0; k < steps; k ++ ) for ( const g of this.groups ) if ( g.active ) this.stepGroup( g, h, threat );
+		if ( dt > 0 ) for ( let k = 0; k < steps; k ++ ) for ( const g of this.groups ) if ( g.active ) this.stepGroup( g, h, threats.length > 1 ? nearestTo( threats, g.center ) : threats.length ? threats[ 0 ] : null );
+		// in someone else's dive: the big animals and the bait ball go where the host's do
+		if ( this._net ) this.netCorrect( dt );
 		// fish moved by someone else (a fish on the spear), after this frame's motion-vector copy
 		if ( this.onStep ) this.onStep( dt );
+
+	}
+
+	// ------------------------------------------------------------------ a dive room's host
+	//
+	// The big animals (barracuda, groupers, jacks, rays, the turtle, tarpon) and the bait ball are
+	// shared: the host sends where they are (netState, a few times a second) and everyone else's
+	// game pulls them there (applyNet, then netCorrect each frame) while running their own steering
+	// in between, so they move smoothly and still part around a diver close by. The small reef fish
+	// stay each player's own. A group the host hasn't sent for NET_FREE seconds swims free again.
+
+	// the shared groups, by index into this.groups (the same on every client: the layout is seeded)
+	netGroups() {
+
+		if ( ! this._netIdx ) this._netIdx = this.groups.map( ( g, i ) => NET_SPECIES.has( g.sp.name ) ? i : - 1 ).filter( ( i ) => i >= 0 );
+		return this._netIdx;
+
+	}
+
+	// the host: the shared groups it simulates now, as floats:
+	//   per group: index, count, centre (3), goal (3), heading x z, ball, alarm,
+	//   then, for a group of NET_FISH or fewer, each fish's position (3) and velocity (3)
+	netState() {
+
+		const out = [];
+		const P = this.pos, V = this.vel;
+		for ( const gi of this.netGroups() ) {
+
+			const g = this.groups[ gi ];
+			if ( ! g.active ) continue;
+			const small = g.count <= NET_FISH;
+			out.push( gi, small ? g.count : 0, g.center.x, g.center.y, g.center.z, g.goal.x, g.goal.y, g.goal.z, g.heading.x, g.heading.z, g.ball, g.alarm );
+			if ( small ) for ( let k = 0; k < g.count; k ++ ) {
+
+				const i = ( g.offset + k ) * 3;
+				out.push( P[ i ], P[ i + 1 ], P[ i + 2 ], V[ i ], V[ i + 1 ], V[ i + 2 ] );
+
+			}
+
+		}
+
+		return new Float32Array( out );
+
+	}
+
+	// everyone else: the host's state, `age` seconds old as it arrives (it's carried on along each
+	// fish's velocity by that much). Returns how many groups it took.
+	applyNet( data, age = 0.1 ) {
+
+		const a = data instanceof Float32Array ? data : new Float32Array( data );
+		const net = this._net || ( this._net = new Map() );
+		const ok = new Set( this.netGroups() );
+		let i = 0, took = 0;
+		while ( i + 12 <= a.length ) {
+
+			const gi = a[ i ] | 0, n = a[ i + 1 ] | 0;
+			const g = this.groups[ gi ];
+			if ( ! g || ! ok.has( gi ) || ( n !== 0 && n !== g.count ) || n > NET_FISH || i + 12 + n * 6 > a.length ) break;
+			for ( let k = 2; k < 12; k ++ ) if ( ! Number.isFinite( a[ i + k ] ) ) return took;
+			const t = net.get( gi ) || { fish: null };
+			t.at = this.time - age;
+			t.center = [ a[ i + 2 ], a[ i + 3 ], a[ i + 4 ] ];
+			t.goal = [ a[ i + 5 ], a[ i + 6 ], a[ i + 7 ] ];
+			t.heading = [ a[ i + 8 ], a[ i + 9 ] ];
+			t.ball = a[ i + 10 ];
+			t.alarm = a[ i + 11 ];
+			t.fish = n ? a.slice( i + 12, i + 12 + n * 6 ) : null;
+			if ( t.fish && ! t.fish.every( Number.isFinite ) ) return took;
+			net.set( gi, t );
+			i += 12 + n * 6;
+			took ++;
+
+		}
+
+		return took;
+
+	}
+
+	// no host any more (left, or this player hosts now): every group swims free
+	clearNet() {
+
+		this._net = null;
+
+	}
+
+	netCorrect( dt ) {
+
+		const P = this.pos, V = this.vel, net = this._net;
+		const pull = 1 - Math.exp( - dt * 2.5 ), vpull = 1 - Math.exp( - dt * 4 );
+		for ( const [ gi, t ] of net ) {
+
+			const g = this.groups[ gi ];
+			const age = this.time - t.at;
+			if ( age > NET_FREE ) {
+
+				net.delete( gi );
+				continue;
+
+			}
+
+			if ( ! g.active ) continue;
+			// the host's plan for the group: its goal, the ball's state; no retargeting of our own
+			g.goal.set( t.goal[ 0 ], t.goal[ 1 ], t.goal[ 2 ] );
+			g.timer = Math.max( g.timer, 1 );
+			g.ball += ( t.ball - g.ball ) * pull;
+			g.alarm = Math.max( g.alarm, t.alarm - age );
+			g.heading.x += ( t.heading[ 0 ] - g.heading.x ) * pull;
+			g.heading.z += ( t.heading[ 1 ] - g.heading.z ) * pull;
+			if ( t.fish ) {
+
+				// each animal toward where the host's is now (its position carried on by its velocity)
+				for ( let k = 0; k < g.count; k ++ ) {
+
+					const i = g.offset + k, i3 = i * 3, f = k * 6;
+					if ( this.pinned[ i ] || this.gone[ i ] ) continue;
+					const F = t.fish;
+					const tx = F[ f ] + F[ f + 3 ] * age, ty = F[ f + 1 ] + F[ f + 4 ] * age, tz = F[ f + 2 ] + F[ f + 5 ] * age;
+					const dx = tx - P[ i3 ], dy = ty - P[ i3 + 1 ], dz = tz - P[ i3 + 2 ];
+					// far off (just joined, or it was frozen here): straight there
+					const jump = dx * dx + dy * dy + dz * dz > NET_JUMP * NET_JUMP;
+					const k1 = jump ? 1 : pull;
+					P[ i3 ] += dx * k1; P[ i3 + 1 ] += dy * k1; P[ i3 + 2 ] += dz * k1;
+					if ( jump ) {
+
+						this.prev[ i3 ] = P[ i3 ]; this.prev[ i3 + 1 ] = P[ i3 + 1 ]; this.prev[ i3 + 2 ] = P[ i3 + 2 ];
+
+					}
+
+					V[ i3 ] += ( F[ f + 3 ] - V[ i3 ] ) * vpull;
+					V[ i3 + 1 ] += ( F[ f + 4 ] - V[ i3 + 1 ] ) * vpull;
+					V[ i3 + 2 ] += ( F[ f + 5 ] - V[ i3 + 2 ] ) * vpull;
+
+				}
+
+			} else {
+
+				// a big school (the bait ball): the whole group shifts toward the host's centre, each
+				// fish keeping its place in it
+				const vx = ( t.goal[ 0 ] - t.center[ 0 ] ), vz = ( t.goal[ 2 ] - t.center[ 2 ] );
+				const vl = Math.hypot( vx, vz ) || 1;
+				const sp = g.sp.cruise * g.sp.length[ 1 ] * ( 1 - 0.75 * g.ball ) * 3 * Math.min( 1, age );
+				const cx = t.center[ 0 ] + vx / vl * sp, cy = t.center[ 1 ], cz = t.center[ 2 ] + vz / vl * sp;
+				const dx = cx - g.center.x, dy = cy - g.center.y, dz = cz - g.center.z;
+				const jump = dx * dx + dy * dy + dz * dz > NET_JUMP * NET_JUMP;
+				const k1 = jump ? 1 : pull;
+				for ( let k = 0; k < g.count; k ++ ) {
+
+					const i = g.offset + k, i3 = i * 3;
+					if ( this.pinned[ i ] || this.gone[ i ] ) continue;
+					P[ i3 ] += dx * k1; P[ i3 + 1 ] += dy * k1; P[ i3 + 2 ] += dz * k1;
+					if ( jump ) {
+
+						this.prev[ i3 ] = P[ i3 ]; this.prev[ i3 + 1 ] = P[ i3 + 1 ]; this.prev[ i3 + 2 ] = P[ i3 + 2 ];
+
+					}
+
+				}
+
+				g.center.x += dx * k1; g.center.y += dy * k1; g.center.z += dz * k1;
+
+			}
+
+		}
 
 	}
 

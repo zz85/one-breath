@@ -516,13 +516,86 @@ export class WhaleBrain {
 		this.bob = - this.strokeAmp * 0.12 * Math.sin( this.strokePhase + 0.5 );
 		this._flippers( dt, target );
 
+		// a dive room's host is ahead or behind along the route / in depth: ease the difference in
+		let netDu = 0;
+		if ( this._netDu ) {
+
+			netDu = this._netDu * Math.min( 1, dt * 0.8 );
+			this._netDu -= netDu;
+			if ( Math.abs( this._netDu ) < 1e-3 ) this._netDu = 0;
+
+		}
+
+		if ( this._netDy ) {
+
+			const k = this._netDy * Math.min( 1, dt * 1.5 );
+			this.y += k;
+			this._netDy -= k;
+			if ( Math.abs( this._netDy ) < 1e-3 ) this._netDy = 0;
+
+		}
+
 		// ---- advance along the route (horizontal speed shrinks when steeply pitched)
-		const du = this.speed * Math.cos( this.pitch ) * dt;
+		const du = this.speed * Math.cos( this.pitch ) * dt + netDu;
 		this.u += du;
 		this._place( dt );
 		// path history (orientation at this travelled distance)
-		this.arc += du;
+		this.arc += Math.abs( du ); // travelled: never back, even where the host's whale is behind
 		this._record( this.arc );
+
+	}
+
+	// ---- a dive room's host shares the whale (game/NetPlay.js): where it is along its route, its
+	// depth, and the surfacing or dive it is in, so it blows, breaches and flukes for everyone at
+	// once. A small difference in the route is closed by easing, a big one by a jump.
+	netState() {
+
+		const r = ( x ) => Math.round( x * 1000 ) / 1000;
+		return {
+			u: r( this.u ), y: r( this.y ), vy: r( this.vy ), speed: r( this.speed ), state: this.state, lastWrap: this.lastWrap,
+			seq: this.seq ? { keys: this.seq.keys, i: this.seq.i, t: r( this.seq.t ), blown: !! this.seq.blown, splashed: !! this.seq.splashed } : null,
+			slap: this.slap ? { side: this.slap.side, t: r( this.slap.t ), hit: !! this.slap.hit } : null, slapTimer: r( this.slapTimer ),
+		};
+
+	}
+
+	applyNet( s, age = 0.1 ) {
+
+		if ( ! s || typeof s !== 'object' || ! Number.isFinite( s.u ) || ! Number.isFinite( s.y ) ) return false;
+		const L = this.length;
+		// along the route: the host's place carried on by its speed for the message's age
+		let du = ( s.u + ( Number.isFinite( s.speed ) ? s.speed : this.speed ) * age ) - this.u;
+		du = ( ( du % L ) + L * 1.5 ) % L - L / 2; // the short way round the loop
+		if ( Math.abs( du ) > 25 ) {
+
+			this.u += du;
+			this.arc += Math.abs( du ); // the body follows the jump along its path record
+			this._place( 0 );
+			this._record( this.arc );
+
+		} else this._netDu = du;
+		const dy = s.y - this.y;
+		if ( Math.abs( dy ) > 4 ) {
+
+			this.y = s.y;
+			this.vy = Number.isFinite( s.vy ) ? s.vy : 0;
+
+		} else this._netDy = dy;
+		if ( Number.isFinite( s.speed ) ) this.speed = s.speed;
+		if ( s.state === 'cruise' || s.state === 'surface' || s.state === 'startled' ) this.state = s.state;
+		this.lastWrap = !! s.lastWrap;
+		const keys = s.seq && Array.isArray( s.seq.keys ) ? s.seq.keys.filter( ( k ) => k && Number.isFinite( k.t ) && Number.isFinite( k.depth ) ).slice( 0, 64 ) : null;
+		if ( keys && keys.length && Number.isInteger( s.seq.i ) && s.seq.i < keys.length ) {
+
+			const same = this.seq && this.seq.i === s.seq.i && JSON.stringify( this.seq.keys ) === JSON.stringify( keys );
+			const blown = same ? this.seq.blown || s.seq.blown : !! s.seq.blown;
+			const splashed = same ? this.seq.splashed || s.seq.splashed : !! s.seq.splashed;
+			this.seq = { keys, i: s.seq.i, t: Math.min( keys[ s.seq.i ].t, ( Number( s.seq.t ) || 0 ) + age ), blown, splashed };
+
+		} else if ( s.seq === null ) this.seq = null;
+		this.slap = s.slap && ( s.slap.side === 0 || s.slap.side === 1 ) ? { side: s.slap.side, t: Number( s.slap.t ) || 0, hit: !! s.slap.hit } : this.slap && ! s.slap ? null : this.slap;
+		if ( Number.isFinite( s.slapTimer ) ) this.slapTimer = s.slapTimer;
+		return true;
 
 	}
 

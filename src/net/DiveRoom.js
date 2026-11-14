@@ -12,6 +12,8 @@
 //   net.setWorld( conditions )                 // the host only; net.isHost, net.hostId
 //   net.setGear( { gunM, bands, gunKind } )     // your speargun, in your profile
 //   net.shoot( p, d, v ); net.onShot( ( userId, shot ) => ... )   // a shot, for the others to see
+//   net.sendLife( fish, whale ); net.onLife( ( fish, whale, sentAt ) => ... )   // the host's animals
+//   net.lifeEvent( ev ); net.onLifeEvent( ( userId, ev ) => ... )    // to the host: a guest hit its whale
 //   net.leave()
 //
 // The host is the player who made the dive (DiveRoom.join with host: true; their browser
@@ -48,7 +50,7 @@ export class DiveRoom {
 		this.hostId = null;
 		this.selfId = null;
 		this.error = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [] };
 		this._chatTimes = new Map();
 		this._names = {};
 		this.room = join( {
@@ -107,6 +109,36 @@ export class DiveRoom {
 
 			const shot = cleanShot( data );
 			if ( shot ) this._emit( 'shot', userId, shot );
+
+		} );
+
+		// the host's animals: the fish groups as floats, then (at times) the whale; from the host alone
+		this._fish = room.makeAction( 'fish' );
+		this._fish.onReceive( ( { byteLength } ) => byteLength <= 32768 );
+		this._fish.onMessage( ( data, { userId, metadata } ) => {
+
+			if ( userId !== this.hostId || userId === this.selfId ) return;
+			const sentAt = metadata && Number.isFinite( metadata.t ) ? metadata.t : null;
+			let a = data;
+			if ( a instanceof ArrayBuffer ) a = new Float32Array( a );
+			else if ( ArrayBuffer.isView( a ) && ! ( a instanceof Float32Array ) ) a = a.byteLength % 4 ? null : new Float32Array( a.buffer, a.byteOffset, a.byteLength / 4 );
+			if ( a instanceof Float32Array ) this._emit( 'life', a, null, sentAt );
+
+		} );
+		this._whale = room.makeAction( 'whale' );
+		this._whale.onReceive( ( { byteLength } ) => byteLength <= 16384 );
+		this._whale.onMessage( ( data, { userId } ) => {
+
+			if ( userId !== this.hostId || userId === this.selfId || ! data || typeof data !== 'object' ) return;
+			this._emit( 'life', null, data.w || null, Number.isFinite( data.t ) ? data.t : null );
+
+		} );
+		this._lifeEv = room.makeAction( 'lifeev' );
+		this._lifeEv.onReceive( ( { byteLength } ) => byteLength <= 256 );
+		this._lifeEv.onMessage( ( data, { userId } ) => {
+
+			if ( ! this._host || ! data || typeof data !== 'object' ) return;
+			if ( data.whale === 'startle' && ( data.side === 1 || data.side === - 1 ) ) this._emit( 'lifeEvent', userId, { whale: 'startle', side: data.side } );
 
 		} );
 
@@ -189,6 +221,22 @@ export class DiveRoom {
 
 	}
 
+	// the host: its animals. t is its clock (performance.now() / 1000 - a guest maps it with the
+	// fish poses' offset); whale as WhaleBrain.netState(), at times
+	sendLife( fish, whale, t ) {
+
+		if ( ! this._host ) return;
+		if ( fish && fish.length && this._fish ) this._fish.send( fish, { metadata: { t } } ).catch( () => {} );
+		if ( whale && this._whale ) this._whale.send( { w: whale, t } ).catch( () => {} );
+
+	}
+
+	lifeEvent( ev ) {
+
+		if ( this._lifeEv && ! this._host ) this._lifeEv.send( ev ).catch( () => {} );
+
+	}
+
 	setLook( look ) {
 
 		const l = cleanLook( look );
@@ -258,7 +306,7 @@ export class DiveRoom {
 
 		const room = this.room;
 		this.room = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [] };
 		if ( room ) await room.leave();
 
 	}
@@ -269,6 +317,8 @@ export class DiveRoom {
 	onError( fn ) { this._handlers.error.push( fn ); }
 	onWorld( fn ) { this._handlers.world.push( fn ); }
 	onShot( fn ) { this._handlers.shot.push( fn ); }
+	onLife( fn ) { this._handlers.life.push( fn ); }
+	onLifeEvent( fn ) { this._handlers.lifeEvent.push( fn ); }
 
 	_emitPeople() {
 

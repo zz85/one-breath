@@ -8,10 +8,14 @@ import { myLook, saveLook, cleanLook, personColour } from './Look.js';
 // peer-to-peer room (net/DiveRoom.js). Each player sends their own pose ~12 times a second,
 // sees the others as divers with name tags (game/RemoteDivers.js), and can chat (ui/NetUI.js).
 // Everyone wears their own suit colours (game/Look.js). The host (who made the dive) sets the time
-// of day and the weather for everyone; the fish and other animals are still each player's own.
+// of day and the weather for everyone, and runs the whale, the big animals and the bait ball,
+// which everyone else's game follows (world/Fish.js netState / applyNet, WhaleBrain the same);
+// the small reef fish stay each player's own, and flee from every diver.
 const SEND_HZ = 12;
 const WORLD_EVERY = 1; // s: how often the host checks its time and weather for a change
 const TIME_EVERY = 5; // s: with time running, how often the host sends it again
+const FISH_EVERY = 0.2; // s: the host's big animals and bait ball, five times a second
+const WHALE_EVERY = 1; // s: and the whale once a second
 const NAME_KEY = 'onebreath.name';
 const HOSTED_KEY = 'onebreath.hosted'; // the codes of the dives this browser made: you're their host
 
@@ -32,7 +36,16 @@ export class NetPlay {
 		this._pose = {};
 		this.name = loadName();
 		this.look = myLook();
-		if ( game.spear ) game.spear.onShot = ( p, d, v ) => this.shot( p, d, v );
+		if ( game.spear ) {
+
+			game.spear.onShot = ( p, d, v ) => this.shot( p, d, v );
+			game.spear.onWhaleStartle = ( side ) => this.room && ! this.isHost && this.room.lifeEvent( { whale: 'startle', side } );
+
+		}
+
+		this._lifeT = 0;
+		this._whaleT = 0;
+		this._wasGuest = false;
 		this._worldT = 0;
 		this._worldSent = null;
 		this._worldSentAt = - Infinity;
@@ -154,6 +167,14 @@ export class NetPlay {
 		// the host's time and weather (never your own: the host's own writes don't come back)
 		room.onWorld( ( c ) => this.applyWorld( c ) );
 		room.onShot( ( id, shot ) => this.divers && this.divers.shot( id, shot ) );
+		// the host's animals (a guest's game pulls its own toward them); a guest hit the host's whale
+		room.onLife( ( fish, whale, t ) => this.applyLife( fish, whale, t ) );
+		room.onLifeEvent( ( id, ev ) => {
+
+			const w = this.app.whale;
+			if ( ev.whale === 'startle' && w && w.brain ) w.brain.startle( ev.side );
+
+		} );
 		this._gearKey = null;
 		this._worldSent = null;
 		room.onError( ( e ) => {
@@ -212,6 +233,55 @@ export class NetPlay {
 		const id = this.room && this.room.hostId;
 		const p = id && this.people[ id ];
 		return p && ! p.self ? p.name : null;
+
+	}
+
+	get fish() {
+
+		return this.app.reef && this.app.reef.fish;
+
+	}
+
+	// how old a message from the host is: their clock mapped to ours by their poses' fastest packet
+	_age( t ) {
+
+		const id = this.room && this.room.hostId;
+		const d = id && this.divers && this.divers.divers.get( id );
+		if ( t === null || ! d || d.buffer.offset === null ) return 0.1;
+		return Math.max( 0, Math.min( 2, this.now - ( t + d.buffer.offset ) ) );
+
+	}
+
+	// a guest: the host's big animals and bait ball, and its whale
+	applyLife( fish, whale, t ) {
+
+		if ( this.isHost ) return;
+		const age = this._age( t );
+		if ( fish && this.fish && this.fish.applyNet ) this.fish.applyNet( fish, age );
+		const w = this.app.whale;
+		if ( whale && w && w.brain && w.brain.applyNet ) w.brain.applyNet( whale, age );
+
+	}
+
+	// the host: send them
+	_sendLife( dt, now ) {
+
+		if ( ! this.isHost ) return;
+		this._lifeT -= dt;
+		this._whaleT -= dt;
+		if ( this._lifeT > 0 ) return;
+		this._lifeT = FISH_EVERY;
+		const fish = this.fish && this.fish.netState ? this.fish.netState() : null;
+		let whale = null;
+		const w = this.app.whale;
+		if ( this._whaleT <= 0 && w && w.brain && w.brain.netState ) {
+
+			this._whaleT = WHALE_EVERY;
+			whale = w.brain.netState();
+
+		}
+
+		this.room.sendLife( fish, whale, now );
 
 	}
 
@@ -315,8 +385,16 @@ export class NetPlay {
 		const now = this.now;
 		if ( this.divers ) this.divers.update( dt, now, this.app.camera );
 		if ( this.ui ) this.ui.update( dt );
+		// the fish flee from every diver in the room, and swim near any of them
+		const fish = this.fish;
+		if ( fish ) fish.others = this.room && this.divers ? this.divers.positions : null;
+		// no host to follow (left, or none): the animals swim free
+		const guest = !! ( this.room && ! this.isHost && this.room.hostId );
+		if ( this._wasGuest && ! guest && fish && fish.clearNet ) fish.clearNet();
+		this._wasGuest = guest;
 		if ( ! this.room ) return;
 		this._sendWorld( dt, now );
+		if ( Object.keys( this.people ).length > 1 ) this._sendLife( dt, now );
 		this._sendGear();
 		this._sendT -= dt;
 		if ( this._sendT > 0 ) return;

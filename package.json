@@ -5,7 +5,7 @@
     "dev": "vite --host 127.0.0.1 --port 5189",
     "build": "vite build",
     "preview": "vite preview",
-    "test": "node test/game-logic.mjs && node test/spear-logic.mjs && node test/spear-game.mjs && node test/touch-words.mjs && node test/quality.mjs && node test/tune.mjs && node test/modes.mjs && node test/fall-damage.mjs && node test/net-pose.mjs && node test/diver.mjs && node test/engine-smoke.mjs",
+    "test": "node test/game-logic.mjs && node test/spear-logic.mjs && node test/spear-game.mjs && node test/touch-words.mjs && node test/quality.mjs && node test/tune.mjs && node test/modes.mjs && node test/fall-damage.mjs && node test/net-pose.mjs && node test/net-life.mjs && node test/diver.mjs && node test/engine-smoke.mjs",
     "test:net": "node test/net-two.mjs && node test/netplay-two.mjs && node test/start-multi.mjs"
   },
   "devDependencies": {

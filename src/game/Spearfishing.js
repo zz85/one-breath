@@ -642,6 +642,8 @@ export class Spearfishing {
 		const rule = judge( 'humpback', 14 );
 		this.sfx.hit( Math.min( 1, E / 40 ) * 0.7 );
 		whale.brain.startle( wh.local.x >= 0 ? 1 : - 1 );
+		// in someone else's dive, their whale has to sound too (game/NetPlay.js)
+		if ( this.onWhaleStartle ) this.onWhaleStartle( wh.local.x >= 0 ? 1 : - 1 );
 		if ( this.fish ) this.fish.scare( gun.shaftPos, 10, 1 );
 		const paid = this.easy ? 0 : st.fine( rule.fine );
 		const fineText = this.easy ? `${ rule.why }. Leave whales alone: it's a $${ rule.fine.toLocaleString( 'en-US' ) } fine on Standard`
