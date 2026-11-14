@@ -2159,6 +2159,7 @@ export class UI {
 						${ row( k( 'Shift' ), 'Sprint, boat boost' ) }
 						${ row( k( 'Space' ), 'Jump, swim up' ) }
 						${ row( k( 'C' ), 'Crouch, dive' ) }
+						${ row( k( 'X' ), 'Duck dive<small>At the surface: fold and drop on no kicks</small>' ) }
 					</section>
 					<section>
 						<h3>Interact</h3>

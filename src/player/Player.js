@@ -31,7 +31,7 @@ const HELM_REACH = 0.75; // m from the helm seat to take the wheel
 // First-person walker / swimmer / boat captain.
 //   walk : capsule on terrain + walkable colliders, wading slows you down
 //   swim : floats with the head at the surface; look down + W (or C) to dive, Space to rise;
-//          V toggles first person / a chase camera behind you
+//          V toggles first person / a chase camera behind you; X at the surface duck dives
 //   deck : aboard, walking in the boat's frame (it moves and rocks under you); E at the helm
 //          takes the wheel, E near a pier / the beach steps ashore
 //   boat : at the helm, driving; V toggles helm (1st person) / chase (3rd person) camera, E stands up
@@ -85,7 +85,7 @@ export class Player {
 		// own body, the way the freediving photos look); `eye` is where your eyes are either way
 		this.swimCam = 'first';
 		this.swimDist = 3.4;
-		// a duck dive from the surface (seconds into it, or null): the body's weight takes you down
+		// X at the surface: a duck dive (seconds into it, or null). The body's weight takes you down
 		// through game/Diver.js's DUCK sequence, with no input until the fins are under; Space aborts
 		this.duck = null;
 		this.swimCamInit = false;
@@ -408,8 +408,15 @@ export class Player {
 		// surface again.
 		const eyeTarget = surfaceY - SWIM_EYE + 0.1; // eyes ~10 cm above the water; waves still wash over
 		let diving = inp.down( 'KeyC' ) || ( m.y > 0.3 && this.pitch < - 0.35 ) || wish.y < - 0.1;
-		// from the surface, a dive is a duck dive: glide, jackknife, legs up, one arm pull, equalize
-		if ( diving && this.floating && atSurface && this.duck === null && ! this.frozen ) this.duck = 0;
+		// X at the surface: a duck dive (glide, jackknife, legs up, one arm pull, equalize), which
+		// gets you down fast on no kicks; diving by looking down or with C stays as it is
+		if ( this.floating && atSurface && this.duck === null && ! this.frozen ) {
+
+			this.prompt = this.prompt || { key: 'X', text: 'Duck dive' };
+			if ( inp.hit( 'KeyX' ) ) this.duck = 0;
+
+		}
+
 		if ( this.duck !== null ) {
 
 			this.duck += dt;

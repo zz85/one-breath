@@ -39,6 +39,7 @@ const BUTTONS = [
 	{ id: 'load', label: 'Load', hold: 'KeyR', r: 12, b: 104 },
 	{ id: 'use', label: 'Use', tap: 'KeyE', r: 98, b: 98 },
 	{ id: 'dive', label: 'Dive', hold: 'KeyC', r: 196, b: 0 },
+	{ id: 'duck', label: 'Duck', tap: 'KeyX', r: 294, b: 0 },
 	{ id: 'up', label: 'Up', hold: 'Space', r: 196, b: 76 },
 	{ id: 'gun', label: 'Gun', tap: 'KeyG', r: 12, b: 190 },
 	{ id: 'cam', label: 'Cam', tap: 'KeyV', r: 98, b: 176 },
@@ -49,7 +50,7 @@ const TOP = [ { id: 'bag', label: 'Bag', tap: 'KeyI' } ];
 const KEY_WORDS = [
 	[ /\bHold LMB\b/g, 'Hold Fire' ], [ /\bLMB\b/g, 'Fire' ], [ /\bRMB\b/g, 'Aim' ], [ /\bHold R\b/g, 'Hold Load' ],
 	[ /\bHold to aim \(or Q\)/g, 'Tap to aim' ], [ /\bG\s+let go of the gun/g, 'Let go  of the gun' ], [ /\bQ\b/g, 'Aim' ], [ /\bE\b/g, 'Use' ], [ /\bG\b/g, 'Gun' ], [ /\bR\b/g, 'Load' ],
-	[ /\bSpace\b/g, 'Up' ], [ /\bV\b/g, 'Cam' ], [ /\bI\b/g, 'Bag' ],
+	[ /\bSpace\b/g, 'Up' ], [ /\bV\b/g, 'Cam' ], [ /\bI\b/g, 'Bag' ], [ /\bX\b/g, 'Duck' ],
 ];
 export function touchWords( text ) {
 
@@ -279,6 +280,7 @@ export class TouchControls {
 			use: !! prompt && /\bE\b/.test( `${ prompt.key } ${ prompt.text }` ),
 			up: swim || free || p.mode === 'walk' || p.mode === 'deck',
 			dive: swim || free,
+			duck: swim && p.floating && p.duck === null,
 			gun: g.canFish && ( gun || sp.allowGun !== false ) && ( gun || swim || p.surface === 'wetsand' || p.surface === 'water' ),
 			cam: helm || swim,
 			bag: true,
@@ -291,7 +293,7 @@ export class TouchControls {
 		this.btn.aim.classList.toggle( 'is-latched', !! sp.aimLatched );
 		// cue the button the prompt asks for
 		const key = prompt ? String( prompt.key ) : '';
-		const cue = /LMB/.test( key ) ? 'fire' : /RMB|^Q$/.test( key ) ? 'aim' : /\bR\b/.test( key ) ? 'load' : key === 'E' ? 'use' : key === 'G' ? 'gun' : key === 'Space' ? 'up' : null;
+		const cue = /LMB/.test( key ) ? 'fire' : /RMB|^Q$/.test( key ) ? 'aim' : /\bR\b/.test( key ) ? 'load' : key === 'E' ? 'use' : key === 'G' ? 'gun' : key === 'Space' ? 'up' : key === 'X' ? 'duck' : null;
 		for ( const id in this.btn ) this.btn[ id ].classList.toggle( 'is-cue', id === cue );
 		if ( prompt ) {
 

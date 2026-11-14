@@ -175,14 +175,24 @@ check( camera.position.y > player.eye.y, 'chase camera a little above' );
 input.wheel = 20;
 step( 1 );
 check( player.swimDist <= 8 && player.swimDist > 3.4, `wheel back: ${ player.swimDist.toFixed( 2 ) } m` );
-// diving from the surface is a duck dive: W while looking down starts it, and the body takes
-// over for DUCK.end seconds: a glide ahead, then down with the legs lifted, no kick
+// looking down + W at the surface is an ordinary dive, no sequence
 input.keys.add( 'KeyW' );
 player.pitch = - 1.0;
+step( 0.5 );
+check( player.duck === null && ! player.floating && player.position.y < - 0.3, `looking down + W dives plainly (y ${ player.position.y.toFixed( 2 ) })` );
+input.keys.delete( 'KeyW' );
+input.keys.add( 'Space' );
+step( 4 );
+input.keys.delete( 'Space' );
+step( 1 );
+check( player.floating && player.prompt && player.prompt.key === 'X', `back at the surface the prompt offers X: ${ player.prompt && player.prompt.text }` );
+// X at the surface is a duck dive: the body takes over for DUCK.end seconds, a glide ahead, then
+// down with the legs lifted, no kick
+player.pitch = 0;
 const y0 = player.position.y, x0 = player.position.x, z0 = player.position.z;
+input.press( 'KeyX' );
 step( 0.2 );
-check( player.duck !== null && player.duck < 0.3, `looking down + W at the surface starts a duck dive (${ player.duck?.toFixed( 2 ) } s in)` );
-input.keys.delete( 'KeyW' ); // no input needed from here
+check( player.duck !== null && player.duck < 0.3, `X at the surface starts a duck dive (${ player.duck?.toFixed( 2 ) } s in)` );
 step( DUCK.glide - 0.2 );
 const glided = Math.hypot( player.position.x - x0, player.position.z - z0 );
 check( Math.abs( player.position.y - y0 ) < 0.25 && glided > 0.25, `glide: level, moving ahead ${ glided.toFixed( 2 ) } m` );
@@ -209,18 +219,21 @@ input.keys.delete( 'KeyW' );
 const floor = terrain.heightAt( camera.position.x, camera.position.z );
 check( camera.position.y > floor + 0.3, `diving: the camera follows (player y ${ player.position.y.toFixed( 1 ) }, camera ${ camera.position.y.toFixed( 1 ) } over the seabed at ${ floor.toFixed( 1 ) })` );
 check( player.swimCam === 'third' && me.diver.kickAmp > 0.3, `diving: still third person, kicking (${ me.diver.kickAmp.toFixed( 2 ) })` );
-// a second dive from under water is no duck dive; back at the surface, Space aborts one
+// X under water does nothing; back at the surface, Space aborts a duck dive
+input.press( 'KeyX' );
+step( 0.1 );
+check( player.duck === null, 'X under water does nothing' );
 input.keys.add( 'Space' );
 step( 6 );
 input.keys.delete( 'Space' );
-check( player.floating && player.duck === null, 'back at the surface' );
-input.keys.add( 'KeyC' );
 step( 0.5 );
-check( player.duck !== null, 'C at the surface starts a duck dive' );
+check( player.floating && player.duck === null, 'back at the surface' );
+input.press( 'KeyX' );
+step( 0.5 );
+check( player.duck !== null, 'X starts another duck dive' );
 input.keys.add( 'Space' );
 step( 0.1 );
 check( player.duck === null, 'Space aborts it' );
-input.keys.delete( 'KeyC' );
 input.keys.delete( 'Space' );
 // with the gun out in first person the arms are hidden (the gun's own view has them)
 input.press( 'KeyV' );
