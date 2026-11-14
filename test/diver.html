@@ -2,16 +2,38 @@
 <html>
 <head>
 	<meta charset="utf-8">
-	<title>Diver figure</title>
-	<style>body { margin: 0; background: #06202c; } canvas { display: block; }</style>
+	<title>Freediver</title>
+	<style>
+		body { margin: 0; background: #06202c; color: #dfe9ee; font: 13px system-ui, sans-serif; overflow: hidden; }
+		canvas { display: block; }
+		#ui { position: absolute; left: 10px; top: 10px; background: rgba(4, 18, 26, 0.75); padding: 10px 12px; border-radius: 8px; display: grid; gap: 6px; min-width: 240px; }
+		#ui b { font-weight: 600; opacity: 0.75; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; }
+		#ui .row { display: flex; gap: 6px; flex-wrap: wrap; }
+		#ui button { background: #163a4a; color: inherit; border: 0; border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+		#ui button.on { background: #2d8fb0; }
+		#ui label { display: grid; grid-template-columns: 60px 1fr 44px; align-items: center; gap: 6px; }
+		#ui input[type=range] { width: 100%; }
+		#ui small { opacity: 0.6; }
+	</style>
 </head>
 <body>
-<canvas id="c" width="1280" height="720"></canvas>
+<canvas id="c"></canvas>
+<div id="ui">
+	<b>Pose</b>
+	<div class="row" id="poses"></div>
+	<b>Inputs</b>
+	<label>speed <input id="speed" type="range" min="0" max="3" step="0.05" value="1.5"><span id="speedV"></span></label>
+	<label>pitch <input id="pitch" type="range" min="-1.5" max="1.5" step="0.05" value="0"><span id="pitchV"></span></label>
+	<label>time <input id="slow" type="range" min="0.05" max="1" step="0.05" value="1"><span id="slowV"></span></label>
+	<b>Readout</b>
+	<div id="out"><small>...</small></div>
+	<small>Drag to orbit, wheel to zoom. ?view=first for your own eyes. ?pose=swim&speed=1.5&pitch=0&frames=N for a still.</small>
+</div>
 <script type="module">
-// Dev / test page: the freediver figure (game/Diver.js) in its poses, lit by the engine, no world.
-// Left to right: standing, hanging at the surface, swimming level, streamlining down, blacked out.
-// ?view=first shows the first-person view instead (what you see of your own body looking down).
-// window.__done is set once the frame is drawn; window.__stats holds the renderer's counts.
+// Dev / test page for the freediver figure (game/Diver.js) on its own: its poses, the kick and the
+// blades bending, animated and lit by the engine, with no world around it. Pick a pose, drag the
+// speed and pitch, slow time down to watch the blades. window.__done is set once `frames` frames
+// are drawn (2 by default), window.__diver is the figure, window.__stats the renderer's counts.
 import { GPU } from '../src/engine/gpu/GPU.js';
 import { RenderTarget } from '../src/engine/gpu/Texture.js';
 import { readTexture } from '../src/engine/gpu/Readback.js';
@@ -26,7 +48,7 @@ import { createPropMaterial } from '../src/game/GameMaterials.js';
 
 const qs = new URLSearchParams( location.search );
 const canvas = document.getElementById( 'c' );
-const W = canvas.width, H = canvas.height;
+const W = canvas.width = Math.min( innerWidth, 1280 ), H = canvas.height = Math.min( innerHeight, 720 );
 await GPU.init( { headless: true } );
 const scene = new E.Scene();
 const ground = new E.Mesh( new E.PlaneGeometry( 60, 60 ).rotateX( - Math.PI / 2 ), new Material( { name: 'sand', color: 0x8a7a5a, roughness: 0.95 } ) );
@@ -34,57 +56,73 @@ ground.position.y = - 2.6;
 scene.add( ground );
 const material = createPropMaterial( 'diver' );
 const first = qs.get( 'view' ) === 'first';
-const poses = [
-	{ mode: 'walk', floating: false, pitch: 0, speed: 0 },
-	{ mode: 'swim', floating: true, pitch: 0, speed: 0 },
-	{ mode: 'swim', floating: false, pitch: 0, speed: 1.5 },
-	{ mode: 'swim', floating: false, pitch: - 1.2, speed: 2.4, sprint: true },
-	{ mode: 'swim', floating: false, pitch: 0, speed: 0.3, blackout: true },
-];
-const divers = [];
-const dt = 1 / 60;
-if ( first ) {
 
-	const d = new Diver( { material, hue: 0.08 } );
-	d.setPose( { mode: 'swim', floating: true, pitch: - 1.1, speed: 0 } );
-	for ( let t = 0; t < 3; t += dt ) d.update( dt );
-	// a quarter kick in: both legs out of line
-	for ( let t = 0; t < 0.4; t += dt ) d.update( dt );
-	d.showHead( false );
-	d.placeEye( 0.3, new E.Vector3( 0, 0, 0 ) );
-	scene.add( d.group );
-	divers.push( d );
+const POSES = {
+	stand: { label: 'Standing', pose: { mode: 'walk', floating: false, speed: 0, pitch: 0 } },
+	surface: { label: 'Surface', pose: { mode: 'swim', floating: true, speed: 0, pitch: 0 } },
+	swim: { label: 'Swimming', pose: { mode: 'swim', floating: false, speed: 1.5, pitch: 0 } },
+	dive: { label: 'Duck dive', pose: { mode: 'swim', floating: false, speed: 2.4, pitch: - 1.2, sprint: true } },
+	gun: { label: 'Gun', pose: { mode: 'swim', floating: false, speed: 1.0, pitch: - 0.2, gun: true } },
+	blackout: { label: 'Blackout', pose: { mode: 'swim', floating: false, speed: 0.3, pitch: 0, blackout: true } },
+};
+const diver = window.__diver = new Diver( { material, hue: 0.08 } );
+scene.add( diver.group );
+let poseName = qs.get( 'pose' ) || ( first ? 'surface' : 'swim' );
+const inputs = { speed: Number( qs.get( 'speed' ) ?? POSES[ poseName ].pose.speed ), pitch: Number( qs.get( 'pitch' ) ?? POSES[ poseName ].pose.pitch ), slow: 1 };
+const want = () => ( { ...POSES[ poseName ].pose, speed: inputs.speed, pitch: inputs.pitch } );
 
-} else {
+// ---- ui
+const $ = ( id ) => document.getElementById( id );
+const posesEl = $( 'poses' );
+for ( const k in POSES ) {
 
-	poses.forEach( ( p, i ) => {
-
-		const d = new Diver( { material, hue: ( 0.08 + i * 0.19 ) % 1 } );
-		d.setPose( p );
-		for ( let t = 0; t < 3; t += dt ) d.update( dt );
-		for ( let t = 0; t < 0.35; t += dt ) d.update( dt );
-		const x = ( i - 2 ) * 2.2;
-		if ( p.mode === 'walk' ) d.place( Math.PI * 0.8, new E.Vector3( x, - 2.6, 0 ) );
-		else d.place( Math.PI * 0.8, new E.Vector3( x, 0, 0 ) );
-		scene.add( d.group );
-		divers.push( d );
-
-	} );
+	const b = document.createElement( 'button' );
+	b.textContent = POSES[ k ].label;
+	b.onclick = () => { poseName = k; inputs.speed = POSES[ k ].pose.speed; inputs.pitch = POSES[ k ].pose.pitch; sync(); };
+	b.dataset.k = k;
+	posesEl.append( b );
 
 }
 
-const camera = new E.PerspectiveCamera( first ? 80 : 45, W / H, 0.1, 1000 );
-if ( first ) {
+const sync = () => {
 
-	camera.position.set( 0, 0, 0 );
-	camera.quaternion.setFromEuler( new E.Euler( - 1.1, 0.3, 0, 'YXZ' ) );
+	for ( const b of posesEl.children ) b.classList.toggle( 'on', b.dataset.k === poseName );
+	$( 'speed' ).value = inputs.speed; $( 'speedV' ).textContent = inputs.speed.toFixed( 2 ) + ' m/s';
+	$( 'pitch' ).value = inputs.pitch; $( 'pitchV' ).textContent = ( inputs.pitch * 180 / Math.PI ).toFixed( 0 ) + ' deg';
+	$( 'slow' ).value = inputs.slow; $( 'slowV' ).textContent = inputs.slow.toFixed( 2 ) + 'x';
 
-} else {
+};
 
-	camera.position.set( 1.5, 0.6, 9.5 );
-	camera.lookAt( 0, - 0.5, 0 );
+for ( const k of [ 'speed', 'pitch', 'slow' ] ) $( k ).oninput = ( e ) => { inputs[ k ] = Number( e.target.value ); sync(); };
+sync();
 
-}
+// ---- camera: orbit about the figure, or the figure's own eyes
+const camera = new E.PerspectiveCamera( first ? 80 : 40, W / H, 0.1, 1000 );
+const orbit = { yaw: 0.6, pitch: 0.12, dist: 5.2 };
+let drag = null;
+canvas.onpointerdown = ( e ) => { drag = { x: e.clientX, y: e.clientY }; };
+canvas.onpointerup = () => { drag = null; };
+canvas.onpointermove = ( e ) => { if ( ! drag ) return; orbit.yaw -= ( e.clientX - drag.x ) * 0.006; orbit.pitch = Math.max( - 1.3, Math.min( 1.3, orbit.pitch + ( e.clientY - drag.y ) * 0.006 ) ); drag = { x: e.clientX, y: e.clientY }; };
+canvas.onwheel = ( e ) => { orbit.dist = Math.max( 1.5, Math.min( 15, orbit.dist * ( 1 + e.deltaY * 0.001 ) ) ); };
+const placeCamera = () => {
+
+	if ( first ) {
+
+		diver.showHead( false );
+		diver.placeEye( 0.3, new E.Vector3( 0, 0, 0 ) );
+		camera.position.set( 0, 0, 0 );
+		camera.quaternion.setFromEuler( new E.Euler( inputs.pitch, 0.3, 0, 'YXZ' ) );
+		return;
+
+	}
+
+	const standing = want().mode === 'walk';
+	diver.place( Math.PI * 0.8, new E.Vector3( 0, standing ? - 2.6 : 0, 0 ) );
+	const target = new E.Vector3( 0, standing ? - 1.7 : - 0.5, 0 );
+	camera.position.set( Math.sin( orbit.yaw ) * Math.cos( orbit.pitch ), Math.sin( orbit.pitch ), Math.cos( orbit.yaw ) * Math.cos( orbit.pitch ) ).multiplyScalar( orbit.dist ).add( target );
+	camera.lookAt( target );
+
+};
 
 G.sunDir.value.set( 0.3, 0.8, 0.5 ).normalize();
 G.sunColor.value.setRGB( 2.6, 2.7, 2.9 );
@@ -99,8 +137,26 @@ const tonemap = new FullscreenPass( { label: 'tonemap', colorFormats: [ 'rgba8un
 		let a = c * 0.8; let t = ( a * ( 2.51 * a + 0.03 ) ) / ( a * ( 2.43 * a + 0.59 ) + 0.14 );
 		return vec4f( linearToSrgb( sat3( t ) ), 1.0 ); }` } );
 const ldr = new RenderTarget( W, H, { colors: [ 'rgba8unorm' ], label: 'ldr' } );
-for ( let f = 0; f < 2; f ++ ) {
+const ctx = canvas.getContext( '2d' );
 
+// settle into the first pose before the first frame
+diver.setPose( want() );
+for ( let t = 0; t < 3; t += 1 / 60 ) diver.update( 1 / 60 );
+
+const frames = Number( qs.get( 'frames' ) || 2 );
+let drawn = 0, last = performance.now(), busy = false;
+const loop = async ( now ) => {
+
+	requestAnimationFrame( loop );
+	if ( busy ) return;
+	busy = true;
+	const dt = Math.min( 0.05, ( now - last ) / 1000 ) * inputs.slow;
+	last = now;
+	diver.setPose( want() );
+	diver.update( dt );
+	placeCamera();
+	const L = diver.legJoints[ 0 ];
+	$( 'out' ).innerHTML = `hip ${ ( L.hip.rotation.x * 180 / Math.PI ).toFixed( 0 ) } deg &middot; foot ${ ( L.ankle.rotation.x * 180 / Math.PI ).toFixed( 0 ) } deg &middot; blade bend ${ ( L.blade.bend * 180 / Math.PI ).toFixed( 0 ) } deg<br>body ${ ( diver.elev * 180 / Math.PI ).toFixed( 0 ) } deg &middot; neck ${ ( diver.neckBend * 180 / Math.PI ).toFixed( 0 ) } deg &middot; kick ${ diver.kickAmp.toFixed( 2 ) } &middot; arms out ${ diver.arm.out.toFixed( 2 ) } up ${ diver.arm.up.toFixed( 2 ) } fwd ${ diver.arm.fwd.toFixed( 2 ) }`;
 	GPU.beginFrame();
 	setFrameCamera( camera, W, H );
 	shadows.render( scene, mr, shadows.update( camera, G.sunDir.value ) );
@@ -108,15 +164,15 @@ for ( let f = 0; f < 2; f ++ ) {
 		clearColors: [ [ 0.02, 0.12, 0.22, 1 ], [ 0, 0, 0, 0 ], [ 0, 0, 0, 0 ] ], depthView: rt.depthTexture.view(), depthFormat: 'depth32float', clearDepth: 0 } );
 	tonemap.render( { colorViews: [ ldr.texture ] } );
 	GPU.submit();
+	const img = await readTexture( ldr.texture );
+	ctx.putImageData( new ImageData( new Uint8ClampedArray( img.data ), W, H ), 0, 0 );
+	window.__stats = mr.stats;
+	if ( ++ drawn >= frames ) window.__done = true;
+	busy = false;
 
-}
+};
 
-const img = await readTexture( ldr.texture );
-const ctx = canvas.getContext( '2d' );
-const id = new ImageData( new Uint8ClampedArray( img.data ), W, H );
-ctx.putImageData( id, 0, 0 );
-window.__stats = mr.stats;
-window.__done = true;
+requestAnimationFrame( loop );
 </script>
 </body>
 </html>

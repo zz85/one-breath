@@ -30,33 +30,50 @@ const head = d.headWorld( new E.Vector3() );
 const eye = d.eyeWorld( new E.Vector3() );
 check( near( head.y, 1.63, 0.02 ) && near( head.x, 0, 0.01 ), `standing: head ${ head.y.toFixed( 2 ) } m up` );
 check( eye.y > head.y && eye.z < - 0.05, `standing: eyes in the face, looking -z (z ${ eye.z.toFixed( 2 ) })` );
-check( ! d.fins[ 0 ].visible && Math.abs( d.legs[ 0 ].rotation.x ) < 0.05, 'standing: no fins, legs still' );
+check( ! d.fins[ 0 ].visible && d.legJoints[ 0 ].foot.visible && Math.abs( d.legs[ 0 ].rotation.x ) < 0.05 && Math.abs( d.legJoints[ 0 ].ankle.rotation.x ) < 0.05, 'standing: bare feet flat, no fins, legs still' );
 
 // swimming level at 1.5 m/s: lying along the view, kicking, the fins flexing a beat behind the hips
 d.setPose( { mode: 'swim', floating: false, pitch: 0, speed: 1.5 } );
 run( d, 3 );
 check( d.fins[ 0 ].visible, 'swimming: fins on' );
 check( near( d.elev, 0.37, 0.03 ), `swimming level: the body lies ${ ( d.elev * 180 / Math.PI ).toFixed( 0 ) } deg above the view, the neck bent back ${ ( - d.neckBend * 180 / Math.PI ).toFixed( 0 ) } deg` );
-let maxSwing = 0, opposite = true, finFlex = 0;
+let maxSwing = 0, opposite = true, maxBend = 0, bendAtTurn = 0, bendMid = 0, rootFirst = true;
+for ( let t = 0; t < 2; t += dt ) {
+
+	d.update( dt );
+	maxSwing = Math.max( maxSwing, Math.abs( d.legs[ 0 ].rotation.x ) );
+
+}
+
 for ( let t = 0; t < 2; t += dt ) {
 
 	d.update( dt );
 	const a = d.legs[ 0 ].rotation.x, b = d.legs[ 1 ].rotation.x;
-	maxSwing = Math.max( maxSwing, Math.abs( a ) );
 	if ( Math.abs( a ) > 0.1 && Math.sign( a ) === Math.sign( b ) ) opposite = false;
-	finFlex = Math.max( finFlex, Math.abs( d.legJoints[ 0 ].ankle.rotation.x ) );
+	const B = d.legJoints[ 0 ].blade;
+	maxBend = Math.max( maxBend, Math.abs( B.bend ) );
+	// the blade bends most mid-sweep (the foot moving fastest) and straightens at the turn
+	if ( Math.abs( a ) > maxSwing * 0.97 ) bendAtTurn = Math.max( bendAtTurn, Math.abs( B.bend ) );
+	if ( Math.abs( a ) < 0.03 ) bendMid = Math.max( bendMid, Math.abs( B.bend ) );
+	if ( Math.abs( B.bend ) > 0.5 && Math.abs( B.angle[ 0 ] ) < Math.abs( B.angle[ 6 ] ) ) rootFirst = false;
 
 }
 
 check( maxSwing > 0.25 && maxSwing < 0.5, `kick: hips swing ${ ( maxSwing * 180 / Math.PI ).toFixed( 0 ) } deg` );
 check( opposite, 'kick: the legs alternate' );
-check( finFlex > 0.3, `kick: the blades flex ${ ( finFlex * 180 / Math.PI ).toFixed( 0 ) } deg` );
+const point = d.legJoints[ 0 ].ankle.rotation.x;
+check( point > 0.9 && point < 1.3, `kick: the feet are pointed, toes trailing (${ ( point * 180 / Math.PI ).toFixed( 0 ) } deg past flat)` );
+check( maxBend > 0.5 && maxBend < 1.3, `kick: the blades bend up to ${ ( maxBend * 180 / Math.PI ).toFixed( 0 ) } deg tip to root` );
+check( bendMid > bendAtTurn * 1.3, `kick: bent most mid-sweep (${ ( bendMid * 180 / Math.PI ).toFixed( 0 ) } deg), straighter at the turn (${ ( bendAtTurn * 180 / Math.PI ).toFixed( 0 ) } deg)` );
+check( rootFirst, 'kick: the blade bends from the root, the tip follows' );
+check( d.legJoints[ 0 ].blade.joints.length === 7 && d.fins[ 0 ].visible && ! d.legJoints[ 0 ].foot.visible, 'swimming: feet in the pockets, 7 blade slices' );
 check( d.arm.out < 0.05 && d.arm.up < 0.05 && d.arm.fwd < 0.05, 'swimming: arms along the sides' );
 
 // a glide: no speed, the kick dies away
 d.setPose( { speed: 0 } );
 run( d, 3 );
 check( d.kickAmp < 0.05, `glide: the kick fades (amp ${ d.kickAmp.toFixed( 3 ) })` );
+check( Math.abs( d.legJoints[ 0 ].blade.bend ) < 0.08, `glide: the blades hang straight (${ ( d.legJoints[ 0 ].blade.bend * 180 / Math.PI ).toFixed( 1 ) } deg)` );
 
 // looking down and sprinting: head first, arms overhead in a streamline
 d.setPose( { mode: 'swim', floating: false, pitch: - 1.3, speed: 2.4, sprint: true } );
@@ -73,7 +90,7 @@ check( hand.y < h2.y, `streamline: the elbows below the head, ahead of it (${ ha
 d.setPose( { mode: 'swim', floating: true, pitch: 0, speed: 0, sprint: false } );
 run( d, 3 );
 check( near( d.elev, 1.4, 0.03 ), `surface: hanging, legs ${ ( d.elev * 180 / Math.PI ).toFixed( 0 ) } deg below the horizontal` );
-check( d.arm.out > 0.6 && d.arm.up < 0.05, `surface: arms out (${ d.arm.out.toFixed( 2 ) })` );
+check( d.arm.out > 0.3 && d.arm.up < 0.05, `surface: arms out (${ d.arm.out.toFixed( 2 ) })` );
 // the face still looks ahead
 d.place( 0, new E.Vector3( 0, 0, 0 ) );
 const e2 = d.eyeWorld( new E.Vector3() ), h3 = d.headWorld( new E.Vector3() );

@@ -33,6 +33,9 @@ const SHOULDER = { x: 0.2, y: 1.45 };
 const UPPER_ARM = 0.3, FOREARM = 0.27;
 const HIP = { x: 0.1, y: 0.9 };
 const THIGH = 0.44, SHIN = 0.42;
+const FOOT_L = 0.24; // heel to toes
+const POINT = Math.PI / 2 - 0.45; // the pointed foot: toes trailing the heel, radians past flat
+const BLADE_L = 0.8, BLADE_N = 7; // the fin blade past the pocket, in slices
 const SUIT = { color: 0x16191c, rough: 0.55, pattern: PAT.rubber };
 const SKIN = { color: 0x9a6a4a, rough: 0.55, pattern: PAT.skin };
 const BLACK = { color: 0x0b0d0e, rough: 0.5, pattern: PAT.rubber };
@@ -93,9 +96,10 @@ export class Diver {
 
 		}
 
-		// legs: hip -> thigh -> knee -> shin and foot -> ankle -> fin
+		// legs: hip -> thigh -> knee -> shin -> ankle -> foot (bare, or in the fin's pocket) -> the blade,
+		// a chain of slices that bends under the water (see Blade)
 		this.legs = []; // the hip pivots (RemoteDivers' tests read their swing)
-		this.fins = [];
+		this.fins = []; // the foot pockets: visible means fins on
 		this.legJoints = [];
 		for ( const s of [ - 1, 1 ] ) {
 
@@ -106,15 +110,18 @@ export class Diver {
 			knee.position.set( 0, - THIGH, 0 );
 			const shin = mesh( buildShin(), 'DiverShin' );
 			const ankle = new Group();
-			ankle.position.set( 0, - SHIN, 0.02 );
-			const fin = mesh( buildFin( accent ), 'DiverFin' );
-			ankle.add( fin );
+			ankle.position.set( 0, - SHIN, - 0.01 );
+			const foot = mesh( buildFoot(), 'DiverFoot' );
+			const fin = mesh( buildPocket(), 'DiverFinPocket' );
+			const blade = new Blade( accent, mesh );
+			blade.root.position.set( 0, - 0.03, FOOT_L );
+			ankle.add( foot, fin, blade.root );
 			knee.add( shin, ankle );
 			hip.add( thigh, knee );
 			this.body.add( hip );
 			this.legs.push( hip );
 			this.fins.push( fin );
-			this.legJoints.push( { s, hip, knee, ankle, fin } );
+			this.legJoints.push( { s, hip, knee, ankle, foot, fin, blade, angle: 0, omega: 0 } );
 
 		}
 
@@ -192,29 +199,39 @@ export class Diver {
 		this.neckBend = ease( this.neckBend, neck, dt, 6 );
 		this.neck.rotation.x = this.neckBend;
 
-		// ---- legs: a flutter kick with the speed through the water, feet together in a glide
+		// ---- legs: a flutter kick with the speed through the water, feet together in a glide. The
+		// hip leads, the knee gives a little on the recovery, the ankle is pointed (the toes trail
+		// the heel, the blade carries on from them) and the blade bends under the water (Blade).
 		const kicking = swim && ! blackout ? clamp( speed / 1.2, 0, 1 ) : 0;
 		this.kickAmp = ease( this.kickAmp, kicking, dt, 4 );
-		this.kickPhase += dt * ( 4 + 3 * this.kickAmp );
-		const amp = ( 0.05 + 0.33 * this.kickAmp ) * this.lie;
+		this.kickPhase += dt * ( 3.2 + 3.3 * this.kickAmp );
+		const amp = ( 0.04 + 0.3 * this.kickAmp ) * this.lie;
 		const stand = 1 - this.lie;
+		const finsOn = this.lie > 0.5;
 		for ( const L of this.legJoints ) {
 
 			const ph = this.kickPhase + ( L.s < 0 ? 0 : Math.PI );
-			// the hip swings, the knee bends on the recovery (the leg coming back up), the blade
-			// bends against the water a beat behind the hip
 			L.hip.rotation.x = Math.sin( ph ) * amp + stand * 0.02 + ( blackout ? 0.25 : 0 ) * this.lie;
-			L.knee.rotation.x = ( 0.08 + Math.max( 0, Math.sin( ph + 1.0 ) ) * 0.45 * this.kickAmp ) * this.lie + stand * 0.03;
-			L.ankle.rotation.x = - Math.cos( ph ) * amp * 1.3;
-			L.fin.visible = this.lie > 0.5;
+			L.knee.rotation.x = ( 0.06 + Math.max( 0, Math.sin( ph + 1.2 ) ) * 0.35 * this.kickAmp ) * this.lie + stand * 0.03;
+			// the pointed foot: in the water the toes trail the heel (plantar flexion ~ 65 deg); on
+			// land the foot is flat
+			L.ankle.rotation.x = MathUtils.lerp( 0, POINT, this.lie ) + Math.sin( ph - 0.6 ) * 0.08 * this.kickAmp * this.lie;
 			L.hip.rotation.z = L.s * 0.03;
+			L.foot.visible = ! finsOn;
+			L.fin.visible = finsOn;
+			// the blade: how fast the foot sweeps through the water
+			const angle = L.hip.rotation.x + L.knee.rotation.x + L.ankle.rotation.x;
+			const omega = dt > 0 ? ( angle - L.angle ) / dt : 0;
+			L.angle = angle;
+			L.omega = ease( L.omega, omega, dt, 30 );
+			L.blade.update( dt, finsOn ? L.omega : 0, finsOn );
 
 		}
 
 		// ---- arms
 		const A = this.arm;
 		let out = 0, up = 0, fwd = 0, limp = 0, bend = 0.1;
-		if ( ! swim ) { out = 0.08; bend = 0.15; } else if ( blackout ) { limp = 1; bend = 0.3; } else if ( w.gun ) { fwd = 1; bend = 0.35; } else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.75 * ( 1 - moving * 2 ); bend = 0.55; }
+		if ( ! swim ) { out = 0.08; bend = 0.15; } else if ( blackout ) { limp = 1; bend = 0.3; } else if ( w.gun ) { fwd = 1; bend = 0.35; } else if ( w.sprint && pitch < - 0.5 && speed > 1.5 ) { up = 1; bend = 0.05; } else if ( w.floating && moving < 0.5 ) { out = 0.38 * ( 1 - moving * 2 ); bend = 0.7; }
 
 		A.out = ease( A.out, out, dt, 4 );
 		A.up = ease( A.up, up, dt, 3 );
@@ -280,6 +297,68 @@ export class Diver {
 
 }
 
+// ---- the fin blade: a chain of slices from the toes, bent by the water
+//
+// Freediving blades are long and soft: the foot sweeps, the blade lags and bends against the water,
+// then whips straight as the foot slows and the tip trails a beat behind. Each slice hangs on the
+// one before as a damped hinge (stiffness falls toward the tip) and the foot's angular speed loads
+// the hinges as water drag: the root bends first, and the bend travels out along the blade.
+class Blade {
+
+	constructor( accent, mesh ) {
+
+		this.root = new Group();
+		this.joints = [];
+		this.angle = new Float32Array( BLADE_N );
+		this.vel = new Float32Array( BLADE_N );
+		const dz = BLADE_L / BLADE_N;
+		let parent = this.root;
+		for ( let i = 0; i < BLADE_N; i ++ ) {
+
+			const j = new Group();
+			if ( i > 0 ) j.position.set( 0, 0, dz );
+			const t0 = i / BLADE_N, t1 = ( i + 1 ) / BLADE_N;
+			j.add( mesh( buildBladeSlice( accent, dz, t0, t1 ), 'DiverBlade' ) );
+			parent.add( j );
+			this.joints.push( j );
+			parent = j;
+
+		}
+
+	}
+
+	// omega: the foot's angular speed about the ankle's axis (rad/s); `on` false lets it hang straight
+	update( dt, omega, on ) {
+
+		const A = this.angle, Vv = this.vel;
+		const h = Math.min( dt, 1 / 30 );
+		for ( let i = 0; i < BLADE_N; i ++ ) {
+
+			const t = ( i + 0.5 ) / BLADE_N;
+			// stiffness and damping fall along the blade; the water's load on each hinge is the
+			// sweep speed of the blade past it (the root's omega, lagging further out)
+			const k = 420 * ( 1 - 0.6 * t ), c = 1.1 * Math.sqrt( k );
+			const load = on ? - omega * 0.035 * ( 1.0 - 0.5 * t ) : 0;
+			Vv[ i ] += ( - k * A[ i ] + k * load - c * Vv[ i ] ) * h;
+			A[ i ] += Vv[ i ] * h;
+			A[ i ] = clamp( A[ i ], - 0.42, 0.42 );
+			this.joints[ i ].rotation.x = A[ i ];
+
+		}
+
+	}
+
+	// the whole blade's bend: the tip's angle from the root's line, radians
+	get bend() {
+
+		let a = 0;
+		for ( let i = 0; i < BLADE_N; i ++ ) a += this.angle[ i ];
+		return a;
+
+	}
+
+}
+
 // ---- geometry, in the figure frame (facing +Z, feet at the origin)
 
 function buildTorso( accent ) {
@@ -287,17 +366,16 @@ function buildTorso( accent ) {
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
 	const ACC = { color: accent, rough: 0.5 };
-	// hips, waist, chest and shoulders: the suit, a coloured stripe down each side and across the chest
-	add( roundedBox( 0.32, 0.2, 0.21, 0.07, 2 ), { ...SUIT, matrix: mat4( 0, 0.95, 0 ) } );
-	add( roundedBox( 0.3, 0.22, 0.19, 0.07, 2 ), { ...SUIT, matrix: mat4( 0, 1.12, 0 ) } );
-	add( roundedBox( 0.38, 0.34, 0.23, 0.09, 3 ), { ...SUIT, matrix: mat4( 0, 1.32, 0 ) } );
-	for ( const s of [ - 1, 1 ] ) add( box( 0.012, 0.5, 0.07 ), { ...ACC, matrix: mat4( s * 0.182, 1.2, 0.01 ) } );
-	add( box( 0.22, 0.045, 0.012 ), { ...ACC, matrix: mat4( 0, 1.38, 0.118 ) } );
-	// weight belt with its lead weights
-	add( cylinder( 0.175, 0.175, 0.04, 16, 1, true ), { ...BLACK, matrix: mat4( 0, 1.03, 0, 0, 0, 0, 1, 1, 0.68 ) } );
-	for ( const [ x, z ] of [ [ - 0.12, 0.08 ], [ 0.12, 0.08 ], [ - 0.14, - 0.07 ], [ 0.14, - 0.07 ] ] ) add( roundedBox( 0.07, 0.05, 0.035, 0.01, 1 ), { color: 0x4a4e52, rough: 0.5, metal: 0.4, matrix: mat4( x, 1.03, z ) } );
+	// a lean swimmer's torso: hips, waist, chest, shoulders in one smooth suit; a stripe down each side
+	add( roundedBox( 0.3, 0.18, 0.19, 0.075, 2 ), { ...SUIT, matrix: mat4( 0, 0.95, 0 ) } );
+	add( roundedBox( 0.26, 0.2, 0.165, 0.07, 2 ), { ...SUIT, matrix: mat4( 0, 1.12, 0 ) } );
+	add( roundedBox( 0.33, 0.3, 0.19, 0.085, 3 ), { ...SUIT, matrix: mat4( 0, 1.32, 0 ) } );
+	for ( const s of [ - 1, 1 ] ) add( box( 0.01, 0.52, 0.05 ), { ...ACC, matrix: mat4( s * 0.155, 1.2, 0.01 ) } );
+	// a thin rubber weight belt, two small weights at the hips
+	add( cylinder( 0.15, 0.15, 0.028, 16, 1, true ), { ...BLACK, matrix: mat4( 0, 1.02, 0, 0, 0, 0, 1, 1, 0.62 ) } );
+	for ( const s of [ - 1, 1 ] ) add( roundedBox( 0.05, 0.035, 0.03, 0.008, 1 ), { color: 0x4a4e52, rough: 0.5, metal: 0.4, matrix: mat4( s * 0.13, 1.02, 0.03 ) } );
 	// neck (the hood)
-	add( cylinder( 0.06, 0.07, 0.08, 10 ), { ...SUIT, matrix: mat4( 0, 1.51, 0.01 ) } );
+	add( cylinder( 0.052, 0.062, 0.08, 10 ), { ...SUIT, matrix: mat4( 0, 1.51, 0.01 ) } );
 	return mergePrepared( P );
 
 }
@@ -309,14 +387,14 @@ function buildHead( accent ) {
 	const add = ( g, o ) => P.push( prepare( g, o ) );
 	const y = HEAD_Y - NECK_Y;
 	const ACC = { color: accent, rough: 0.5 };
-	add( sphere( 0.11, 14, 10 ), { ...SUIT, matrix: mat4( 0, y, 0, 0, 0, 0, 1, 1.12, 1.04 ) } );
+	add( sphere( 0.098, 14, 10 ), { ...SUIT, matrix: mat4( 0, y, 0, 0, 0, 0, 1, 1.12, 1.04 ) } );
 	// the face in the hood's opening
-	add( sphere( 0.085, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...SKIN, matrix: mat4( 0, y - 0.03, 0.05, Math.PI / 2, 0, 0, 0.9, 1, 1.1 ) } );
-	// low-volume mask: skirt, two lenses, strap; the snorkel on the left
-	add( roundedBox( 0.17, 0.075, 0.05, 0.02, 2 ), { ...BLACK, rough: 0.35, matrix: mat4( 0, y + 0.03, 0.105 ) } );
-	for ( const s of [ - 1, 1 ] ) add( box( 0.065, 0.05, 0.008 ), { color: 0x6f8f9c, rough: 0.05, metal: 0.2, matrix: mat4( s * 0.04, y + 0.03, 0.131 ) } );
-	add( cylinder( 0.116, 0.116, 0.016, 16, 1, true ), { ...ACC, matrix: mat4( 0, y + 0.03, - 0.005 ) } );
-	add( rod( V( 0.11, y - 0.07, 0.06 ), V( 0.12, y + 0.21, 0.0 ), 0.012, 6 ), ACC );
+	add( sphere( 0.078, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...SKIN, matrix: mat4( 0, y - 0.03, 0.04, Math.PI / 2, 0, 0, 0.9, 1, 1.1 ) } );
+	// low-volume mask: a slim skirt, two lenses, strap; the snorkel on the left
+	add( roundedBox( 0.15, 0.06, 0.035, 0.015, 2 ), { ...BLACK, rough: 0.35, matrix: mat4( 0, y + 0.03, 0.095 ) } );
+	for ( const s of [ - 1, 1 ] ) add( box( 0.058, 0.042, 0.006 ), { color: 0x6f8f9c, rough: 0.05, metal: 0.2, matrix: mat4( s * 0.036, y + 0.03, 0.114 ) } );
+	add( cylinder( 0.104, 0.104, 0.014, 16, 1, true ), { ...ACC, matrix: mat4( 0, y + 0.03, - 0.005 ) } );
+	add( rod( V( 0.1, y - 0.07, 0.05 ), V( 0.11, y + 0.2, 0.0 ), 0.01, 6 ), ACC );
 	return mergePrepared( P );
 
 }
@@ -325,8 +403,8 @@ function buildHead( accent ) {
 function buildUpperArm( s ) {
 
 	const P = [];
-	P.push( prepare( sphere( 0.058, 10, 8 ), { ...SUIT, matrix: mat4( s * 0.01, - 0.01, 0 ) } ) );
-	P.push( prepare( rod( V( s * 0.02, - 0.02, 0 ), V( s * 0.03, - UPPER_ARM, 0 ), 0.05, 10, 0.042 ), SUIT ) );
+	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( s * 0.005, - 0.01, 0 ) } ) );
+	P.push( prepare( rod( V( s * 0.01, - 0.02, 0 ), V( s * 0.015, - UPPER_ARM, 0 ), 0.042, 10, 0.035 ), SUIT ) );
 	return mergePrepared( P );
 
 }
@@ -335,8 +413,8 @@ function buildUpperArm( s ) {
 function buildForearm( s ) {
 
 	const P = [];
-	P.push( prepare( rod( V( s * 0.03, 0.02, 0 ), V( s * 0.03, - FOREARM, 0.01 ), 0.042, 10, 0.034 ), SUIT ) );
-	P.push( prepare( roundedBox( 0.075, 0.16, 0.03, 0.012, 2 ), { ...SKIN, matrix: mat4( s * 0.03, - FOREARM - 0.08, 0.012, 0.1, 0, 0 ) } ) );
+	P.push( prepare( rod( V( s * 0.015, 0.02, 0 ), V( s * 0.015, - FOREARM, 0.01 ), 0.035, 10, 0.028 ), SUIT ) );
+	P.push( prepare( roundedBox( 0.07, 0.17, 0.022, 0.01, 2 ), { ...SKIN, matrix: mat4( s * 0.015, - FOREARM - 0.085, 0.012, 0.1, 0, 0 ) } ) );
 	return mergePrepared( P );
 
 }
@@ -344,32 +422,52 @@ function buildForearm( s ) {
 function buildThigh() {
 
 	const P = [];
-	P.push( prepare( sphere( 0.075, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.02, 0 ) } ) );
-	P.push( prepare( rod( V( 0, - 0.02, 0 ), V( 0, - THIGH, 0.0 ), 0.074, 10, 0.058 ), SUIT ) );
+	P.push( prepare( sphere( 0.066, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.02, 0 ) } ) );
+	P.push( prepare( rod( V( 0, - 0.02, 0 ), V( 0, - THIGH, 0.0 ), 0.064, 10, 0.05 ), SUIT ) );
 	return mergePrepared( P );
 
 }
 
-// the shin and the bare foot from the knee pivot; the fin's pocket covers the foot in the water
+// the shin from the knee pivot (the foot is its own part, on the ankle)
 function buildShin() {
 
 	const P = [];
-	P.push( prepare( sphere( 0.058, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.01, 0 ) } ) );
-	P.push( prepare( rod( V( 0, - 0.01, 0 ), V( 0, - SHIN, - 0.01 ), 0.056, 10, 0.045 ), SUIT ) );
-	P.push( prepare( roundedBox( 0.085, 0.06, 0.22, 0.025, 2 ), { ...SKIN, matrix: mat4( 0, - SHIN - 0.02, 0.06 ) } ) );
+	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.01, 0 ) } ) );
+	P.push( prepare( rod( V( 0, - 0.01, 0 ), V( 0, - SHIN, - 0.01 ), 0.048, 10, 0.038 ), SUIT ) );
 	return mergePrepared( P );
 
 }
 
-// a long freediving fin from the ankle pivot: foot pocket, then the blade carrying on along the
-// leg (the toes pointed), with its side rails
-function buildFin( accent ) {
+// the bare foot from the ankle pivot: heel at the pivot, toes toward +Z (on land)
+function buildFoot() {
+
+	return mergePrepared( [ prepare( roundedBox( 0.08, 0.055, FOOT_L, 0.022, 2 ), { ...SKIN, matrix: mat4( 0, - 0.03, FOOT_L / 2 - 0.03 ) } ) ] );
+
+}
+
+// the fin's foot pocket over the foot: rubber, open at the heel, the blade's root at the toes
+function buildPocket() {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
-	add( roundedBox( 0.1, 0.11, 0.25, 0.035, 2 ), { ...BLACK, rough: 0.6, matrix: mat4( 0, - 0.04, 0.05 ) } );
-	add( box( 0.19, 0.78, 0.01 ), { color: accent, rough: 0.3, matrix: mat4( 0, - 0.5, 0.0, - 0.08, 0, 0 ) } );
-	for ( const s of [ - 1, 1 ] ) add( box( 0.012, 0.78, 0.028 ), { ...BLACK, matrix: mat4( s * 0.096, - 0.5, 0.0, - 0.08, 0, 0 ) } );
+	add( roundedBox( 0.095, 0.075, FOOT_L + 0.02, 0.03, 2 ), { ...BLACK, rough: 0.6, matrix: mat4( 0, - 0.03, FOOT_L / 2 - 0.02 ) } );
+	// the heel strap
+	add( cylinder( 0.045, 0.045, 0.03, 10, 1, true ), { ...BLACK, matrix: mat4( 0, - 0.035, - 0.02, Math.PI / 2, 0, 0, 1, 1, 0.9 ) } );
+	return mergePrepared( P );
+
+}
+
+// one slice of the blade, from its hinge (z 0) to the next (z dz): the blade tapers a little to
+// the tip, its side rails taper more
+function buildBladeSlice( accent, dz, t0, t1 ) {
+
+	const P = [];
+	const add = ( g, o ) => P.push( prepare( g, o ) );
+	const w = ( t ) => 0.19 - 0.025 * t;
+	const w0 = w( t0 ), w1 = w( t1 );
+	add( box( ( w0 + w1 ) / 2, 0.006, dz + 0.004 ), { color: accent, rough: 0.3, matrix: mat4( 0, 0, dz / 2 ) } );
+	const r = 0.028 * ( 1 - 0.7 * t0 ) + 0.004;
+	for ( const s of [ - 1, 1 ] ) add( box( 0.01, r, dz + 0.004 ), { ...BLACK, matrix: mat4( s * ( w0 + w1 ) / 4 - s * 0.002, 0, dz / 2 ) } );
 	return mergePrepared( P );
 
 }
