@@ -1,13 +1,16 @@
 // Game modes and difficulty, chosen on the start screen (ui/UI.js showModeMenu) or from the URL:
-//   ?mode=leisure | depth | spear      &difficulty=relaxed | standard | realistic
+//   ?mode=leisure | depth | spear      &difficulty=easy | standard | realistic
 // The last choice is saved and preselected next time. ?hunt (game/Practice.js) is spearfishing.
 //
 //   leisure   explore the reef on one breath: no speargun, nothing to sell
 //   depth     dive a line from a buoy, competition style (not built yet: the menu shows it, locked)
 //   spear     the speargun hunt
 //
-// Difficulty scales the breath-hold (the gear's holdS): relaxed gives more time, realistic is the
-// gear's own figure. The equalizing, buoyancy and judging rules of depth mode will read it too.
+// Difficulty scales the breath-hold (the gear's holdS): easy gives more time, realistic is the
+// gear's own figure. Easy is the beginner's game too (game/Spearfishing.js reads `easy`): no
+// blackout (your buddy brings you up as the breath runs out, the fish stays on), calmer fish, a
+// steadier aim, and a warning instead of a fine for a protected or undersized fish.
+// The equalizing, buoyancy and judging rules of depth mode will read it too.
 
 const KEY = 'onebreath.mode';
 
@@ -31,7 +34,7 @@ export const MODES = {
 };
 
 export const DIFFICULTY = {
-	relaxed: { label: 'Relaxed', holdMul: 1.6 },
+	easy: { label: 'Easy', holdMul: 1.6, easy: true },
 	standard: { label: 'Standard', holdMul: 1.2 },
 	realistic: { label: 'Realistic', holdMul: 1 },
 };
@@ -65,7 +68,8 @@ export function pickMode( qs, storage = safeStorage() ) {
 	const qm = qs && qs.get( 'mode' ), qd = qs && qs.get( 'difficulty' );
 	const hunt = !! ( qs && qs.has( 'hunt' ) );
 	const mode = hunt ? 'spear' : usable( qm ) ? qm : usable( saved.mode ) ? saved.mode : 'leisure';
-	const difficulty = DIFFICULTY[ qd ] ? qd : DIFFICULTY[ saved.difficulty ] ? saved.difficulty : 'standard';
+	const old = ( d ) => d === 'relaxed' ? 'easy' : d; // Easy was called Relaxed
+	const difficulty = DIFFICULTY[ old( qd ) ] ? old( qd ) : DIFFICULTY[ old( saved.difficulty ) ] ? old( saved.difficulty ) : 'standard';
 	return { mode, difficulty, fromURL: hunt || usable( qm ) };
 
 }

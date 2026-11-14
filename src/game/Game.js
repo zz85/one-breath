@@ -86,6 +86,7 @@ export class Game {
 		this.spear.applyGear( g );
 		this.spear.apnea.holdS = g.holdS * ( DIFFICULTY[ this.mode.difficulty ] || DIFFICULTY.standard ).holdMul;
 		this.spear.allowGun = !! ( MODES[ this.mode.mode ] || MODES.spear ).gun;
+		this.spear.easy = !! ( DIFFICULTY[ this.mode.difficulty ] || {} ).easy;
 		if ( ! this.spear.allowGun && this.spear.equipped && this.spear.phase === 'home' ) this.spear.equip( false );
 		const b = this.app.boatCtl;
 		if ( b && this._engineBase ) {

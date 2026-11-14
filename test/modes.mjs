@@ -31,14 +31,17 @@ const qs = ( s ) => new URLSearchParams( s );
 	ok( c.mode === 'leisure' && ! c.fromURL, '?mode=depth is locked: leisure, and the menu shows' );
 	c = pickMode( qs( '?hunt=barracuda' ), st );
 	ok( c.mode === 'spear' && c.fromURL, '?hunt is spearfishing' );
-	saveMode( { mode: 'spear', difficulty: 'relaxed' }, st );
+	saveMode( { mode: 'spear', difficulty: 'easy' }, st );
 	c = pickMode( qs( '' ), st );
-	ok( c.mode === 'spear' && c.difficulty === 'relaxed' && ! c.fromURL, 'the saved choice is preselected' );
+	ok( c.mode === 'spear' && c.difficulty === 'easy' && ! c.fromURL, 'the saved choice is preselected' );
+	saveMode( { mode: 'spear', difficulty: 'relaxed' }, st );
+	ok( pickMode( qs( '' ), st ).difficulty === 'easy', 'a save from when Easy was Relaxed reads as Easy' );
+	ok( pickMode( qs( '?difficulty=relaxed' ), st ).difficulty === 'easy', '?difficulty=relaxed still works' );
 	st.setItem( 'onebreath.mode', '{bad' );
 	ok( pickMode( qs( '' ), st ).mode === 'leisure', 'a broken save: the defaults' );
 	ok( pickMode( qs( '' ), null ).mode === 'leisure', 'no storage: the defaults' );
 	ok( MODES.depth.locked && ! MODES.leisure.gun && MODES.spear.gun, 'depth locked, leisure without the gun' );
-	ok( DIFFICULTY.relaxed.holdMul > DIFFICULTY.standard.holdMul && DIFFICULTY.standard.holdMul > DIFFICULTY.realistic.holdMul, 'relaxed holds longest' );
+	ok( DIFFICULTY.easy.holdMul > DIFFICULTY.standard.holdMul && DIFFICULTY.easy.easy && DIFFICULTY.standard.holdMul > DIFFICULTY.realistic.holdMul, 'easy holds longest' );
 
 }
 

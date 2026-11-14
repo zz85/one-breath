@@ -2,7 +2,7 @@ import { Vector3 } from '../engine/index.js';
 import { SpearGun } from './SpearGun.js';
 import { SpearAudio } from '../audio/SpearAudio.js';
 import { SpearHUD } from './SpearHUD.js';
-import { hitTest, zoneOf, ZONES, penetration, stepShaft, SpearFight, Apnea, judge, weightKg, swimmerInfo, maxRadius, whaleShaft } from './Spear.js';
+import { hitTest, zoneOf, ZONES, penetration, stepShaft, SpearFight, Apnea, judge, weightKg, swimmerInfo, maxRadius, whaleShaft, PPO2_BLACKOUT } from './Spear.js';
 
 const CATCH_CARD_MS = 9000;
 const RESPAWN_S = 300; // a taken fish's place in its school is filled again after this (game seconds)
@@ -76,6 +76,9 @@ export class Spearfishing {
 		this.practice = null;
 		// false in the freediving modes (game/Mode.js): no speargun
 		this.allowGun = true;
+		// Easy (game/Mode.js): no blackout, calmer fish, a steadier aim, warnings instead of fines
+		this.easy = false;
+		this._assist = false;
 
 	}
 
@@ -215,6 +218,23 @@ export class Spearfishing {
 
 		}
 
+		// Easy: the oxygen never falls to where the way up would black you out (the surface's
+		// pressure is the lowest, so a floor above the blackout there holds all the way up). As it
+		// gets close, your buddy takes you up; a fish on the line stays on.
+		if ( this.easy ) {
+
+			const floor = PPO2_BLACKOUT * 1.2;
+			this.apnea.o2 = Math.max( this.apnea.o2, floor );
+			this.apnea.blackout = false;
+			if ( under && this.apnea.o2 < floor * 1.15 ) {
+
+				if ( ! this._assist ) this.toast( 'Out of breath · your buddy is taking you up', 2600 );
+				this._assist = true;
+
+			} else if ( ! under ) this._assist = false;
+
+		} else this._assist = false;
+
 		if ( ! under && this._lastUnder && this.apnea.lastDive && this.apnea.lastDive.time > 25 ) this.sfx.gasp( Math.min( 1, this.apnea.lastDive.time / 60 ) );
 		this._lastUnder = under;
 		if ( this.apnea.blackout && this.phase !== 'blackout' ) this.startBlackout();
@@ -231,6 +251,7 @@ export class Spearfishing {
 		// the fish are warier of a diver finning hard than of one gliding still; at the surface the
 		// splashing scares them from farther
 		if ( this.fish ) this.fish.wary = Math.max( 0.5, Math.min( 1.7, ( camUnder ? 0.55 : 0.9 ) + 0.4 * speed + ( this.loading ? 0.25 : 0 ) ) );
+		if ( this.fish && this.easy ) this.fish.wary = Math.min( this.fish.wary, 0.4 ); // they let you within about 2 m
 		if ( this.fish && this.practice && this.practice.calm ) this.fish.wary = 0.25;
 		if ( this.fish ) this.fish.curious = camUnder && speed < 0.35 && this.phase === 'home' && ! this.loading;
 
@@ -347,11 +368,13 @@ export class Spearfishing {
 		else if ( this.phase === 'loose' ) this.updateLoose( dt, hauling );
 		else if ( this.phase === 'whale' ) this.updateWhale( dt );
 		if ( this.phase !== 'fight' && this.phase !== 'whale' && ! ( this.phase === 'loose' && holdingFloat ) ) p.tug.set( 0, 0, 0 );
+		// Easy, out of breath: drawn steadily up to the surface
+		if ( this._assist ) p.tug.y = Math.max( p.tug.y, 1.2 );
 
 		// ---- the hand: a slow wobble, steadier when aiming, shaky when hypoxic or in a contraction
 		this.contraction = Math.max( 0, this.contraction - dt * 2.5 );
 		const t = performance.now() / 1000;
-		const amp = ( this.aiming ? 0.006 : 0.02 ) * ( 1 + 2.5 * this.apnea.hypoxia ) + this.contraction * 0.03;
+		const amp = ( ( this.aiming ? 0.006 : 0.02 ) * ( 1 + 2.5 * this.apnea.hypoxia ) + this.contraction * 0.03 ) * ( this.easy ? 0.5 : 1 );
 		const sway = { x: Math.sin( t * 0.9 ) * amp + Math.sin( t * 2.3 ) * amp * 0.3, y: Math.sin( t * 1.3 + 1 ) * amp * 0.8 - this.contraction * 0.02 };
 		gun.update( dt, { visible: can && p.mode !== 'boat', sway } );
 
@@ -406,7 +429,7 @@ export class Spearfishing {
 
 		const v0 = s.v0 * Math.sqrt( gun.bandsLoaded / s.bands );
 		// a hip shot wanders; aimed down the shaft it goes where the shaft points
-		const spread = this.aiming ? 0.004 : 0.022;
+		const spread = ( this.aiming ? 0.004 : 0.022 ) * ( this.easy ? 0.5 : 1 );
 		_v.copy( gun.forward );
 		_v.x += ( Math.random() - 0.5 ) * spread * 2;
 		_v.y += ( Math.random() - 0.5 ) * spread * 2;
@@ -617,8 +640,9 @@ export class Spearfishing {
 		this.sfx.hit( Math.min( 1, E / 40 ) * 0.7 );
 		whale.brain.startle( wh.local.x >= 0 ? 1 : - 1 );
 		if ( this.fish ) this.fish.scare( gun.shaftPos, 10, 1 );
-		const paid = st.fine( rule.fine );
-		const fineText = `${ rule.why }. Fined $${ rule.fine.toLocaleString( 'en-US' ) }${ paid < rule.fine ? ` (you could pay $${ paid })` : '' }`;
+		const paid = this.easy ? 0 : st.fine( rule.fine );
+		const fineText = this.easy ? `${ rule.why }. Leave whales alone: it's a $${ rule.fine.toLocaleString( 'en-US' ) } fine on Standard`
+			: `${ rule.why }. Fined $${ rule.fine.toLocaleString( 'en-US' ) }${ paid < rule.fine ? ` (you could pay $${ paid })` : '' }`;
 		if ( result === 'bounce' ) {
 
 			// skips off the skin, the way it came, and sinks
@@ -823,7 +847,11 @@ export class Spearfishing {
 		const rule = T.rule;
 		if ( ! rule.ok ) {
 
-			if ( rule.fine > 0 ) {
+			if ( rule.fine > 0 && this.easy ) {
+
+				this.toast( `${ rule.why }. Let it go: it's a $${ rule.fine } fine on Standard`, 4200 );
+
+			} else if ( rule.fine > 0 ) {
 
 				st.fine( rule.fine );
 				this.toast( `${ rule.why }. Fined $${ rule.fine }`, 4200 );

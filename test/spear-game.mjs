@@ -593,5 +593,47 @@ function shootAt( W, { upgrades = {} } = {} ) {
 
 }
 
+// ---- Easy: no blackout (the buddy takes you up, the fish stays on), no fine
+{
+
+	// the same dive that blacks out on Standard: out of breath at 6 m
+	const W = makeWorld( [] );
+	const { sp, player } = W;
+	sp.easy = true;
+	sp.apnea.o2 = 0.03; // 0.048 atm at 6 m: past blackout
+	W.run( 3 );
+	ok( sp.phase !== 'blackout' && ! sp.apnea.blackout, `easy: out of breath at 6 m, no blackout (${ sp.phase })` );
+	ok( W.toasts.some( ( t ) => /buddy is taking you up/.test( t ) ), 'easy: told the buddy is taking you up' );
+	ok( player.position.y > - 6 + 2, `easy: drawn up towards the surface (now ${ player.position.y.toFixed( 1 ) } m)` );
+	const W0 = makeWorld( [] );
+	W0.sp.apnea.o2 = 0.03;
+	W0.run( 0.5 );
+	ok( W0.sp.phase === 'blackout', `standard: the same dive blacks out (${ W0.sp.phase })` );
+
+	// a fish on the line stays on while the buddy takes you up
+	const W2 = makeWorld( [ { name: 'jack', model: 'jack', L: 0.75, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	W2.sp.easy = true;
+	shootAt( W2 );
+	const before = W2.sp.phase;
+	W2.sp.apnea.o2 = 0.07;
+	W2.run( 1 );
+	ok( before === 'fight' && [ 'fight', 'out', 'home' ].includes( W2.sp.phase ) && W2.sp.phase !== 'blackout', `easy: the fish stays on (${ before } -> ${ W2.sp.phase })` );
+
+	// a protected grouper: a warning, no fine
+	const W3 = makeWorld( [ { name: 'grouper', model: 'grouper', L: 0.6, p: [ 0, - 6, - 2 ], h: [ 1, 0, 0 ] } ] );
+	W3.sp.easy = true;
+	W3.game.state.money = 100;
+	shootAt( W3 );
+	for ( let i = 0; i < 600 && W3.sp.phase !== 'home'; i ++ ) {
+
+		W3.frame( 1 / 60, { lmb: true } );
+		W3.input._hit.add( 'KeyE' );
+
+	}
+
+	ok( W3.game.state.money === 100 && W3.toasts.some( ( t ) => /fine on Standard/.test( t ) ), `easy: a protected fish costs nothing, with a warning (money ${ W3.game.state.money })` );
+
+}
+
 console.log( fails ? `${ fails } failed` : 'all passed' );
 process.exit( fails ? 1 : 0 );
