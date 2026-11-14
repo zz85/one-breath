@@ -6,12 +6,21 @@
 //   const net = await DiveRoom.join( code, { name } )
 //   net.onPose( ( userId, pose ) => ... )      // ~12 a second from each diver
 //   net.onChat( ( userId, text ) => ... )
-//   net.onPeople( ( people ) => ... )          // { [userId]: { name, hue, self } } on every change
-//   net.sendPose( float32Array ); net.say( text ); net.setName( name ); net.leave()
+//   net.onPeople( ( people ) => ... )          // { [userId]: { name, hue, look, host, self } } on every change
+//   net.onWorld( ( conditions ) => ... )       // the host's time and weather (not your own)
+//   net.sendPose( float32Array ); net.say( text ); net.setName( name ); net.setLook( look )
+//   net.setWorld( conditions )                 // the host only; net.isHost, net.hostId
+//   net.leave()
+//
+// The host is the player who made the dive (DiveRoom.join with host: true; their browser
+// remembers the codes it made, so a reload keeps it). Their profile says so, and the others take
+// the time and weather from them alone: a shared state anyone could write, read only from the
+// host. Among friends that's enough; a stranger with the link could claim it too.
 //
 // Trystero is loaded on the first join, so a player who never dives with friends doesn't
 // download it.
 import { decodePose, hueOf, cleanName, cleanChat } from './Pose.js';
+import { cleanLook } from '../game/Look.js';
 
 export const APP_ID = 'zz85/one-breath';
 export const MAX_DIVERS = 8;
@@ -19,21 +28,24 @@ const CHAT_PER_10S = 10; // more than this from one player is dropped
 
 export class DiveRoom {
 
-	static async join( code, { name = 'Diver', joinRoom = null } = {} ) {
+	static async join( code, { name = 'Diver', look = null, host = false, joinRoom = null } = {} ) {
 
 		const join = joinRoom || ( await import( 'trystero' ) ).joinRoom;
-		const r = new DiveRoom( code, join, name );
+		const r = new DiveRoom( code, join, name, look, host );
 		await r._start();
 		return r;
 
 	}
 
-	constructor( code, join, name ) {
+	constructor( code, join, name, look = null, host = false ) {
 
 		this.code = code;
+		this._look = cleanLook( look );
+		this._host = !! host;
+		this.hostId = null;
 		this.selfId = null;
 		this.error = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [] };
 		this._chatTimes = new Map();
 		this._names = {};
 		this.room = join( {
@@ -59,9 +71,16 @@ export class DiveRoom {
 		const self = await room.getSelf();
 		this.selfId = self.userId;
 		// name and colour: each player's own signed slot, replayed to anyone who joins later
-		this.profile = room.makeUserState( 'profile', { name: 'Diver' }, { maxBytes: 256 } );
+		this.profile = room.makeUserState( 'profile', { name: 'Diver' }, { maxBytes: 512 } );
 		this.profile.onChange( () => this._emitPeople(), { replay: true } );
-		this.profile.set( { name: this._name } ).catch( () => {} );
+		this._sendProfile();
+		// the time and weather: whoever writes it, it's taken from the host's writes alone
+		this.world = room.makeState( 'world', null, { maxBytes: 1024 } );
+		this.world.onChange( ( value, ctx ) => {
+
+			if ( ctx && ctx.userId === this.hostId && ctx.userId !== this.selfId ) this._emit( 'world', value );
+
+		}, { replay: true } );
 		room.onUserJoin( () => this._emitPeople() );
 		room.onUserLeave( ( { userId } ) => {
 
@@ -101,6 +120,54 @@ export class DiveRoom {
 
 	}
 
+	_sendProfile() {
+
+		if ( ! this.profile ) return;
+		const p = { name: this._name };
+		if ( this._look ) p.look = this._look;
+		if ( this._host ) p.host = true;
+		this.profile.set( p ).catch( () => {} );
+
+	}
+
+	// the host: an online player whose profile says so (the first by id, where two do)
+	_findHost( people ) {
+
+		const ids = Object.keys( people ).filter( ( id ) => people[ id ].host ).sort();
+		const before = this.hostId;
+		this.hostId = ids[ 0 ] || null;
+		// a host found late (their profile came after their world state): take what they wrote
+		if ( this.hostId && this.hostId !== before && this.hostId !== this.selfId && this.world ) {
+
+			const meta = this.world.getMeta();
+			if ( meta && meta.userId === this.hostId && this.world.get() ) this._emit( 'world', this.world.get() );
+
+		}
+
+	}
+
+	get isHost() {
+
+		return this._host;
+
+	}
+
+	setWorld( conditions ) {
+
+		if ( ! this._host || ! this.world ) return;
+		this.world.set( conditions ).catch( () => {} );
+
+	}
+
+	setLook( look ) {
+
+		const l = cleanLook( look );
+		if ( JSON.stringify( l ) === JSON.stringify( this._look ) ) return;
+		this._look = l;
+		this._sendProfile();
+
+	}
+
 	// everyone in the room, you included
 	people() {
 
@@ -113,7 +180,7 @@ export class DiveRoom {
 			const self = id === this.selfId;
 			if ( ! self && ! this.room.getUsers()[ id ] ) continue; // a profile left behind
 			const p = profiles[ id ];
-			out[ id ] = { name: cleanName( p && p.name ) || 'Diver', hue: hueOf( id ), self };
+			out[ id ] = { name: cleanName( p && p.name ) || 'Diver', hue: hueOf( id ), look: cleanLook( p && p.look ), host: !! ( p && p.host === true ), self };
 
 		}
 
@@ -147,7 +214,7 @@ export class DiveRoom {
 		const n = cleanName( name );
 		if ( ! n || n === this._name ) return;
 		this._name = n;
-		if ( this.profile ) this.profile.set( { name: n } ).catch( () => {} );
+		this._sendProfile();
 
 	}
 
@@ -161,7 +228,7 @@ export class DiveRoom {
 
 		const room = this.room;
 		this.room = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [] };
 		if ( room ) await room.leave();
 
 	}
@@ -170,10 +237,14 @@ export class DiveRoom {
 	onChat( fn ) { this._handlers.chat.push( fn ); }
 	onPeople( fn ) { this._handlers.people.push( fn ); }
 	onError( fn ) { this._handlers.error.push( fn ); }
+	onWorld( fn ) { this._handlers.world.push( fn ); }
 
 	_emitPeople() {
 
-		if ( this.room ) this._emit( 'people', this.people() );
+		if ( ! this.room ) return;
+		const people = this.people();
+		this._findHost( people );
+		this._emit( 'people', people );
 
 	}
 

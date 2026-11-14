@@ -3257,7 +3257,7 @@ export class UI {
 	// a code or a pasted invite link. Host and Join start the game in the mode that has the pulse
 	// (the last played), with ui.modeChoice.multi = { host: true } or { code }. mp { code, name }: an
 	// invite link's code opens the panel with it filled in, and Enter joins.
-	setMultiplayer( { code = '', name = '' } = {} ) {
+	setMultiplayer( { code = '', name = '', extra = null } = {} ) {
 
 		const el = this.startEl, M = el.querySelector( '.tw-start-modes' ), P = el.querySelector( '.tw-start-mp' );
 		const proto = M.querySelector( '.tw-start-cta[data-mode]' );
@@ -3281,6 +3281,8 @@ export class UI {
 				<button type="button" class="tw-mp-btn" data-multi="join" disabled>Join</button>
 			</div>
 			<div class="tw-mp-note"></div>`;
+		// more of the player's own choices (main.js: the suit picker) under the name
+		if ( extra ) P.querySelector( '.tw-mp-row' ).after( extra );
 		const nameIn = P.querySelector( '.tw-mp-name' ), codeIn = P.querySelector( '.tw-mp-code' ), joinBtn = P.querySelector( '[data-multi="join"]' );
 		nameIn.value = name;
 		codeIn.value = code;
@@ -3289,7 +3291,7 @@ export class UI {
 			const m = this.modeChoice || {};
 			const label = proto.parentElement.querySelector( `.tw-start-cta[data-mode="${ m.mode }"] span:last-child` );
 			joinBtn.disabled = ! readCode( codeIn.value );
-			P.querySelector( '.tw-mp-note' ).textContent = `You dive in ${ label ? label.textContent : 'your last mode' }. Hosting copies an invite link to send your friends. Up to 8 divers.`;
+			P.querySelector( '.tw-mp-note' ).textContent = `You dive in ${ label ? label.textContent : 'your last mode' }. Hosting copies an invite link to send your friends; as the host you set the time and weather. Up to 8 divers.`;
 
 		};
 		codeIn.addEventListener( 'input', note );

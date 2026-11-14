@@ -36,6 +36,35 @@ check( await ana.evaluate( () => [ ...document.querySelectorAll( '.nu-people spa
 check( await wait( ana, () => { const t = document.querySelector( '.nt' ); return t && t.textContent === 'Ben' && t.style.display !== 'none'; }, 15000 ), 'Ana sees Ben\'s name tag, 12 m ahead of her' );
 const tagAt = await ana.evaluate( () => document.querySelector( '.nt' ).getBoundingClientRect().toJSON() );
 check( Math.abs( tagAt.x + tagAt.width / 2 - 640 ) < 30 && tagAt.y < 360, `in the middle of her view, above the horizon (${ Math.round( tagAt.x + tagAt.width / 2 ) }, ${ Math.round( tagAt.y ) })` );
+// the host: Ana made the dive, so she has World and Ben is told she sets it
+check( await ana.isVisible( 'text=World' ) && ! await ben.isVisible( '.nu-bar >> text=World' ), 'Ana (the host) has a World button, Ben doesn\'t' );
+check( await wait( ben, () => document.querySelector( '.nu-world' )?.textContent === 'Time and weather: Ana (host)', 10000 ), 'Ben: "Time and weather: Ana (host)"' );
+await ana.getByRole( 'button', { name: 'World' } ).click();
+await ana.$eval( '.nu-time input[type=range]', ( r ) => { r.value = '6.5'; r.dispatchEvent( new Event( 'input' ) ); } );
+check( await ana.textContent( '.nu-time b' ) === '06:30', 'Ana drags the time to 06:30' );
+check( await wait( ben, () => Math.abs( window.__game.app.settings.timeOfDay - 6.5 ) < 0.01, 10000 ), 'Ben\'s sun follows: 06:30' );
+await ana.getByRole( 'button', { name: 'Storm' } ).click();
+check( await wait( ben, () => window.__game.app.ui.weather === 'Storm', 10000 ), 'Ana picks Storm: Ben gets the storm' );
+await ana.screenshot( { path: '/tmp/netplay-world.png', clip: { x: 0, y: 0, width: 640, height: 400 } } );
+await ana.click( '.nu-check input' );
+check( await wait( ben, () => window.__game.app.settings.timeSpeed > 0, 10000 ), 'Ana lets the time run: Ben\'s runs too' );
+await ben.evaluate( () => { window.__game.app.settings.timeOfDay = 22; window.__game.app.ui.setWeather( 'Calm' ); } );
+// Ben can't set it: his own change stands only until the host sends again
+check( await wait( ben, () => window.__game.app.ui.weather === 'Storm', 12000 ), 'Ben changes his own weather: the host\'s comes back' );
+
+// Ben's suit: Suit opens the picker, a swatch changes it for him and for Ana
+await ben.getByRole( 'button', { name: 'Suit' } ).click();
+await ben.click( '[aria-label="Suit Ocean"]' );
+await ben.click( '[aria-label="Trim Yellow"]' );
+await ben.click( '[aria-label="Fins Blue"]' );
+check( await ben.evaluate( () => JSON.stringify( window.__game.me.diver.look ) ) === JSON.stringify( { suit: 0x1f4f7a, accent: 0xffd21f, fins: 0x1f6fd1 } ), 'Ben wears it at once' );
+check( await ben.evaluate( () => JSON.parse( localStorage.getItem( 'onebreath.look' ) ).fins ) === 0x1f6fd1, 'and it\'s kept for next time' );
+check( await wait( ana, () => { const d = [ ...window.__np.divers.divers.values() ][ 0 ]; return d && d.diver.look.suit === 0x1f4f7a && d.diver.look.accent === 0xffd21f && d.diver.look.fins === 0x1f6fd1; }, 10000 ), 'Ana sees Ben in the ocean-blue suit, yellow trim and blue fins' );
+check( await wait( ana, () => getComputedStyle( document.querySelector( '.nt' ) ).getPropertyValue( '--nt-c' ).trim() === '#ffd21f', 5000 ), 'his name tag\'s dot is his trim colour' );
+await ben.screenshot( { path: '/tmp/netplay-suit.png', clip: { x: 0, y: 0, width: 640, height: 400 } } );
+await ben.keyboard.press( 'Escape' );
+check( await ben.evaluate( () => document.querySelector( '.nu-pop' ).hidden ), 'Esc closes the picker' );
+
 // Ben chats: Enter opens the box, he types, Enter sends
 await ben.keyboard.press( 'Enter' );
 check( await wait( ben, () => document.activeElement?.classList.contains( 'nu-input' ), 3000 ), 'Ben: Enter opens the chat box' );
@@ -47,6 +76,7 @@ await ben.keyboard.press( 'Enter' );
 await ben.keyboard.type( '/name Benny' );
 await ben.keyboard.press( 'Enter' );
 check( await wait( ana, () => document.querySelector( '.nt' )?.textContent === 'Benny', 10000 ), '/name Benny: Ana\'s tag for him changes' );
+await ana.getByRole( 'button', { name: 'World' } ).click();
 // Ana clicks her own name in the list, types a new one, Enter
 await ana.click( '.nu-people .is-me' );
 check( await ana.evaluate( () => document.activeElement?.classList.contains( 'nu-rename' ) && document.activeElement.value === 'Ana' ), 'Ana: a click on her name turns it into a box' );

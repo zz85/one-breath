@@ -5,6 +5,7 @@ import { App } from './App.js';
 import { UI } from './ui/UI.js';
 import { AppUI } from './ui/AppUI.js';
 import { MODES, DIFFICULTY } from './game/Mode.js';
+import { suitPicker } from './ui/SuitPicker.js';
 
 // ?bench runs in background tabs too (automation): rAF does not fire in a hidden page
 if ( /[?&]bench\b/.test( location.search ) ) {
@@ -43,7 +44,13 @@ app.init( ( p, text, until ) => ui.setLoading( p, text, until ) ).then( async ()
 
 		ui.setModes( MODES, DIFFICULTY, game.mode );
 		// Multiplayer: host a dive or join one (an invite link opens it with the code filled in)
-		if ( game.net ) ui.setMultiplayer( { code: game.net.linkCode || '', name: game.net.name } );
+		if ( game.net ) {
+
+			const suit = suitPicker( game.net.look, ( look ) => game.net.setLook( look ) );
+			suit.el.classList.add( 'tw-mp-suit' );
+			ui.setMultiplayer( { code: game.net.linkCode || '', name: game.net.name, extra: suit.el } );
+
+		}
 
 	}
 

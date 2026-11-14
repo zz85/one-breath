@@ -50,7 +50,7 @@ export class RemoteDivers {
 
 			const who = this.people[ id ];
 			if ( who && who.self ) return;
-			d = new RemoteDiver( id, who ? who.hue : 0.55, this.material );
+			d = new RemoteDiver( id, who ? who.hue : 0.55, this.material, who ? who.look : null );
 			this.divers.set( id, d );
 			this.scene.add( d.group );
 			if ( this.layer ) {
@@ -76,7 +76,12 @@ export class RemoteDivers {
 
 			const who = people[ id ];
 			if ( ! who || who.self ) this.remove( id );
-			else d.setName( who.name );
+			else {
+
+				d.diver.setLook( who.look );
+				d.setName( who.name, true );
+
+			}
 
 		}
 
@@ -147,12 +152,12 @@ export class RemoteDivers {
 
 class RemoteDiver {
 
-	constructor( id, hue, material ) {
+	constructor( id, hue, material, look = null ) {
 
 		this.id = id;
 		this.hue = hue;
 		this.buffer = new PoseBuffer();
-		this.diver = new Diver( { material, hue } );
+		this.diver = new Diver( { material, hue, look } );
 		this.group = this.diver.group;
 		this.group.name = 'Diver:' + id.slice( 0, 8 );
 		this.group.visible = false;
@@ -167,14 +172,16 @@ class RemoteDiver {
 	get legs() { return this.diver.legs; }
 	get fins() { return this.diver.fins; }
 
-	setName( name ) {
+	// the tag: the name, and a dot in the suit's trim colour
+	setName( name, force = false ) {
 
-		if ( name === this.name ) return;
+		if ( name === this.name && ! force ) return;
 		this.name = name;
 		if ( this.tag ) {
 
 			this.tag.textContent = name;
-			this.tag.style.setProperty( '--nt-c', `hsl(${ Math.round( this.hue * 360 ) } 80% 60%)` );
+			const a = this.diver.look.accent;
+			this.tag.style.setProperty( '--nt-c', '#' + a.toString( 16 ).padStart( 6, '0' ) );
 
 		}
 

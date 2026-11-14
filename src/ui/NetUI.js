@@ -1,11 +1,15 @@
+import { suitPicker } from './SuitPicker.js';
+import { personColour } from '../game/Look.js';
+
 // The dive-with-friends panel, under the brand at the top left (game/NetPlay.js drives it):
-//   not in a room   "Dive with friends": makes a room and copies its invite link
-//   in a room       who's in the water, Invite (copy the link again), Leave, and the chat
+//   not in a room   "Dive with friends": makes a room and copies its invite link; Suit
+//   in a room       who's in the water, Invite (copy the link again), Suit, World (the host: time
+//                   of day and weather for everyone), Leave, and the chat
 // Enter opens the chat box (the pointer is let go while you type), Enter sends, Esc closes.
 // On a phone, the Chat button opens it. Chat lines fade after a while; with the box open the
 // last ones show again.
 const CSS = /* css */`
-.nu { display: flex; flex-direction: column; align-items: flex-start; gap: var(--tw-1); max-width: min(calc(380 * var(--tw-u)), 80vw); font: 500 var(--tw-fs-md) var(--tw-font); color: var(--tw-ink); }
+.nu { display: flex; flex-direction: column; align-items: flex-start; gap: var(--tw-1); max-width: min(calc(470 * var(--tw-u)), 86vw); font: 500 var(--tw-fs-md) var(--tw-font); color: var(--tw-ink); }
 .nu-bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--tw-2); padding: var(--tw-1) var(--tw-1) var(--tw-1) var(--tw-3); border-radius: 999px; }
 .nu-bar.is-solo { padding: 0; background: none; border: 0; -webkit-backdrop-filter: none; backdrop-filter: none; }
 .nu-count { white-space: nowrap; }
@@ -32,6 +36,16 @@ const CSS = /* css */`
 	background: rgba(12, 18, 26, 0.8); color: var(--tw-ink); font: 500 var(--tw-fs-md) var(--tw-font); outline: none; }
 .nu.is-typing .nu-input { display: block; }
 .nu-input:focus { border-color: var(--tw-aqua); }
+.nu-pop { display: flex; flex-direction: column; gap: var(--tw-2); padding: var(--tw-3); border-radius: var(--tw-r-md); }
+.nu-pop[hidden] { display: none; }
+.nu-pop-h { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); text-transform: uppercase; letter-spacing: 0.08em; }
+.nu-time { display: flex; align-items: center; gap: var(--tw-2); }
+.nu-time input[type=range] { flex: 1; min-width: calc(150 * var(--tw-u)); accent-color: var(--tw-aqua); }
+.nu-time b { font-family: var(--tw-mono); min-width: 3.2em; text-align: right; }
+.nu-check { display: flex; align-items: center; gap: var(--tw-1); font-size: var(--tw-fs-sm); color: var(--tw-ink-2); cursor: pointer; }
+.nu-wx { display: flex; gap: var(--tw-1); flex-wrap: wrap; }
+.nu-wx .nu-btn[aria-pressed="true"] { background: rgba(var(--tw-aqua-rgb, 95, 227, 212), 0.45) !important; }
+.nu-world { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); padding: 0 var(--tw-2); }
 .nu-hint { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); padding: 0 var(--tw-2); }
 .tw-root:not(.is-locked) .nu-hint-locked { display: none; }
 `;
@@ -66,8 +80,19 @@ export class NetUI {
 		this.inviteBtn = this.button( 'Invite', () => this.net.copyLink() );
 		this.chatBtn = this.button( 'Chat', () => this.open() );
 		this.leaveBtn = this.button( 'Leave', () => this.net.leave() );
-		this.bar.append( this.mainBtn, this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.leaveBtn );
+		this.suitBtn = this.button( 'Suit', () => this.pop( 'suit' ) );
+		this.worldBtn = this.button( 'World', () => this.pop( 'world' ) );
+		this.bar.append( this.mainBtn, this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.suitBtn, this.worldBtn, this.leaveBtn );
 		this.peopleEl = el( 'div', 'nu-people' );
+		this.worldEl = el( 'div', 'nu-world' );
+		// the popovers: your suit colours; the host's time and weather
+		this.suitPop = el( 'div', 'nu-pop tw-glass' );
+		this.suitPop.hidden = true;
+		this.suitPop.append( el( 'div', 'nu-pop-h', 'Your suit' ) );
+		this.picker = suitPicker( net.look, ( look ) => this.net.setLook( look ) );
+		this.suitPop.append( this.picker.el );
+		this.worldPop = this.buildWorld();
+		this.worldPop.hidden = true;
 		this.log = el( 'div', 'nu-log' );
 		this.hint = el( 'div', 'nu-hint' );
 		this.hint.innerHTML = '<span class="nu-hint-locked">Enter: chat · Esc: use the mouse, then click your name to change it</span>';
@@ -89,7 +114,13 @@ export class NetUI {
 
 		} );
 		this.input.addEventListener( 'blur', () => this.close( false, true ) );
-		root.append( this.bar, this.peopleEl, this.log, this.input, this.hint );
+		root.append( this.bar, this.suitPop, this.worldPop, this.peopleEl, this.worldEl, this.log, this.input, this.hint );
+		this.worldBtn.hidden = true;
+		window.addEventListener( 'keydown', ( e ) => {
+
+			if ( e.key === 'Escape' && this.popped ) this.pop( null );
+
+		} );
 		const tl = ui.hud && ui.hud.querySelector( '.tw-tl' );
 		( tl || ui.hud || ui.root ).append( root );
 		this.lines = [];
@@ -124,6 +155,85 @@ export class NetUI {
 
 	}
 
+	// open one popover ('suit', 'world'), or close it (the same again, or null); the mouse is let go
+	pop( which ) {
+
+		if ( which && which === this.popped ) which = null;
+		this.popped = which;
+		this.suitPop.hidden = which !== 'suit';
+		this.worldPop.hidden = which !== 'world';
+		this.suitBtn.setAttribute( 'aria-expanded', String( which === 'suit' ) );
+		this.worldBtn.setAttribute( 'aria-expanded', String( which === 'world' ) );
+		if ( which === 'suit' ) this.picker.set( this.net.look );
+		if ( which === 'world' ) this.syncWorld();
+		if ( which && document.pointerLockElement ) document.exitPointerLock();
+
+	}
+
+	// the host's controls: the time of day (a slider), whether it runs, and the weather
+	buildWorld() {
+
+		const pop = el( 'div', 'nu-pop tw-glass' );
+		pop.append( el( 'div', 'nu-pop-h', 'Time and weather · for everyone' ) );
+		const row = el( 'div', 'nu-time' );
+		const range = this.timeRange = el( 'input' );
+		range.type = 'range';
+		range.min = '0';
+		range.max = '24';
+		range.step = '0.25';
+		range.setAttribute( 'aria-label', 'Time of day' );
+		const read = this.timeRead = el( 'b', '', '' );
+		range.addEventListener( 'input', () => {
+
+			read.textContent = clock( Number( range.value ) );
+			this.net.setTime( Number( range.value ) % 24 );
+
+		} );
+		range.addEventListener( 'keydown', ( e ) => e.stopPropagation() );
+		row.append( range, read );
+		const run = el( 'label', 'nu-check' );
+		const box = this.timeRun = el( 'input' );
+		box.type = 'checkbox';
+		box.addEventListener( 'change', () => this.net.setTime( this.net.app.settings.timeOfDay, box.checked ? 0.02 : 0 ) );
+		run.append( box, document.createTextNode( 'Time runs (an hour a minute or so)' ) );
+		const wx = this.wxRow = el( 'div', 'nu-wx' );
+		for ( const name of WEATHERS ) {
+
+			const b = this.button( name, () => {
+
+				this.net.setWeather( name );
+				this.syncWorld();
+
+			} );
+			b.dataset.wx = name;
+			wx.append( b );
+
+		}
+
+		pop.append( row, run, wx );
+		return pop;
+
+	}
+
+	syncWorld() {
+
+		const app = this.net.app;
+		if ( ! this.timeRange ) return;
+		this.timeRange.value = String( app.settings.timeOfDay );
+		this.timeRead.textContent = clock( app.settings.timeOfDay );
+		this.timeRun.checked = app.settings.timeSpeed !== 0;
+		const w = app.ui && app.ui.weather;
+		for ( const b of this.wxRow.children ) b.setAttribute( 'aria-pressed', String( b.dataset.wx === w ) );
+
+	}
+
+	// a guest: the host changed the time or weather
+	worldChanged() {
+
+		if ( this.popped === 'world' ) this.syncWorld();
+
+	}
+
 	// code null: not in a room (joining: on the way in)
 	setRoom( code, people, joining ) {
 
@@ -134,6 +244,18 @@ export class NetUI {
 		this.mainBtn.textContent = joining ? 'Joining the dive...' : 'Dive with friends';
 		this.mainBtn.disabled = !! joining;
 		for ( const b of [ this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.leaveBtn ] ) b.hidden = ! code;
+		// the host sets the time and weather; the others are told who does
+		const host = this.net.isHost;
+		this.worldBtn.hidden = ! code || ! host;
+		if ( ! code || ! host ) {
+
+			if ( this.popped === 'world' ) this.pop( null );
+
+		}
+
+		const hostName = code && ! host ? this.net.hostName : null;
+		this.worldEl.hidden = ! hostName;
+		this.worldEl.textContent = hostName ? `Time and weather: ${ hostName } (host)` : '';
 		this.hint.hidden = ! code;
 		this.peopleEl.hidden = ! code;
 		if ( ! code ) {
@@ -164,7 +286,8 @@ export class NetUI {
 
 			}
 
-			s.style.setProperty( '--nu-c', hsl( p.hue ) );
+			s.style.setProperty( '--nu-c', personColour( p ) );
+			if ( p.host ) s.title = ( s.title ? s.title + ' · ' : '' ) + 'host';
 			return s;
 
 		} ) );
@@ -209,11 +332,11 @@ export class NetUI {
 
 	}
 
-	chat( name, text, hue, self = false ) {
+	chat( name, text, colour, self = false ) {
 
 		const line = el( 'div', 'nu-line' );
 		const who = el( 'b', '', name );
-		line.style.setProperty( '--nu-c', hsl( hue ) );
+		line.style.setProperty( '--nu-c', colour );
 		line.append( who, document.createTextNode( text ) );
 		if ( self ) line.classList.add( 'is-self' );
 		this.add( line );
@@ -289,4 +412,12 @@ export class NetUI {
 
 }
 
-const hsl = ( h ) => `hsl(${ Math.round( h * 360 ) } 80% 62%)`;
+const WEATHERS = [ 'Calm', 'Breezy', 'Choppy', 'Storm' ]; // ui/AppUI.js SEA
+
+// 6.5 -> "06:30"
+function clock( h ) {
+
+	const m = Math.round( ( ( h % 24 ) + 24 ) % 24 * 60 );
+	return `${ String( Math.floor( m / 60 ) % 24 ).padStart( 2, '0' ) }:${ String( m % 60 ).padStart( 2, '0' ) }`;
+
+}

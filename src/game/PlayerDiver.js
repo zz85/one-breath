@@ -1,4 +1,5 @@
 import { Diver } from './Diver.js';
+import { myLook } from './Look.js';
 
 // Your own body in the water: the freediver figure (game/Diver.js) hung from your eyes, so you
 // see your arms along your sides and your fins when you look down, and the whole of you from the
@@ -9,7 +10,7 @@ export class PlayerDiver {
 	constructor( { scene, material, player, hue = 0.08 } ) {
 
 		this.player = player;
-		this.diver = new Diver( { material, hue } );
+		this.diver = new Diver( { material, hue, look: myLook() } ); // your suit (game/Look.js; NetPlay.setLook changes it)
 		this.diver.group.name = 'PlayerDiver';
 		this.diver.group.visible = false;
 		scene.add( this.diver.group );

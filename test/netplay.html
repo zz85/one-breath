@@ -22,8 +22,21 @@ const camera = new PerspectiveCamera( 60, innerWidth / innerHeight, 0.1, 1000 );
 camera.position.set( 0, 0.2, 0 );
 const scene = new Group();
 const player = { position: new Vector3( Number( qs.get( 'x' ) || 0 ), 0, Number( qs.get( 'z' ) || 0 ) ), velocity: new Vector3( 0, 0, - 1 ), yaw: 0, pitch: 0, mode: 'swim', floating: true, waterH: 0 };
-const app = { qs, scene, camera, player, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
-const game = { app, stand: { material: null }, spear: null };
+const settings = { timeOfDay: 16.2, timeSpeed: 0 };
+// a stand-in for ui/AppUI.js's conditions: plain numbers, the same names and the same weathers
+const SEA = { Calm: { wind: 3.5 }, Breezy: { wind: 7 }, Choppy: { wind: 12 }, Storm: { wind: 20 } };
+const cond = { wind: 7, clouds: 0.42 };
+const appUI = {
+	getConditions: () => ( { time: settings.timeOfDay, speed: settings.timeSpeed, ...cond } ),
+	setConditions( c ) { if ( typeof c.time === 'number' ) settings.timeOfDay = c.time; if ( typeof c.speed === 'number' ) settings.timeSpeed = c.speed; for ( const k in cond ) if ( typeof c[ k ] === 'number' ) cond[ k ] = c[ k ]; },
+	setWeather( n ) { this.setConditions( { ...SEA[ n ], clouds: n === 'Storm' ? 0.95 : 0.42 } ); },
+	get weather() { return Object.keys( SEA ).find( ( k ) => SEA[ k ].wind === cond.wind ); },
+};
+const app = { qs, scene, camera, player, settings, ui: appUI, input: { keys: new Set(), vkeys: new Set(), touch: false, requestLock() {} }, audio: null };
+const me = { diver: { look: null, setLook( l ) { this.look = l; } } };
+const game = { app, stand: { material: null }, spear: null, me };
+window.__game = game;
+setInterval( () => { settings.timeOfDay = ( settings.timeOfDay + settings.timeSpeed * 0.1 ) % 24; }, 100 );
 const np = window.__np = new NetPlay( game );
 np.attach( ui );
 let last = performance.now();

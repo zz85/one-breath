@@ -13,6 +13,15 @@ const SEA = {
 	Storm: { wind: 20, fetch: 900, chop: 1.2, swell: 1.0, surf: 0.9, period: 12, whitecaps: 1 },
 };
 
+// the sky that goes with each sea state, for the weather picker of a dive's host
+export const WEATHER_SKY = {
+	Calm: { clouds: 0.15, cirrus: 0.3, haze: 0.8 },
+	Breezy: { clouds: 0.42, cirrus: 0.5, haze: 1 },
+	Choppy: { clouds: 0.68, cirrus: 0.6, haze: 1.4 },
+	Storm: { clouds: 0.95, cirrus: 0.8, haze: 2.4 },
+};
+export const WEATHERS = Object.keys( SEA );
+
 export class AppUI {
 
 	constructor( app, ui = new UI() ) {
@@ -86,6 +95,8 @@ export class AppUI {
 			G.waterScattering.value.set( 0.012, 0.018, 0.024 ).multiplyScalar( k * k );
 
 		};
+
+		this._apply = { spectrum, whitecaps, clarity };
 
 		// ---------------------------------------------------------------- Ocean
 		const ocean = ui.addTab( 'ocean', 'Ocean', 'ocean' );
@@ -364,6 +375,100 @@ export class AppUI {
 
 		const depth = ( app.cameraWaterHeight ?? 0 ) - app.camera.position.y;
 		ui.setDepth( { visible: p.mode === 'swim' && depth > 0.3, meters: depth } );
+
+	}
+
+
+	// ---- time and weather as plain numbers, for a dive's host to share (game/NetPlay.js)
+	getConditions() {
+
+		const s = this.s, app = this.app;
+		return {
+			time: app.settings.timeOfDay, speed: app.settings.timeSpeed,
+			wind: s.wind, windDir: s.windDir, fetch: s.fetch, chop: s.chop, swell: s.swell, whitecaps: s.whitecaps,
+			surf: s.surf, period: s.period, clouds: s.clouds, cirrus: s.cirrus, haze: s.haze ?? 1, clarity: s.clarity,
+		};
+
+	}
+
+	// apply someone else's conditions (or a part of them): each number is clamped to its control's range
+	setConditions( c ) {
+
+		if ( ! c || typeof c !== 'object' ) return;
+		const app = this.app, s = this.s, fft = app.fft, shore = app.shore;
+		const num = ( k, lo, hi ) => {
+
+			const v = c[ k ];
+			return typeof v === 'number' && Number.isFinite( v ) ? Math.min( hi, Math.max( lo, v ) ) : null;
+
+		};
+		const time = num( 'time', 0, 24 ), speed = num( 'speed', - 2, 2 );
+		if ( time !== null ) {
+
+			// a small difference (time running on both sides) eases in: no visible jump of the sun
+			let d = time - app.settings.timeOfDay;
+			if ( d > 12 ) d -= 24; else if ( d < - 12 ) d += 24;
+			if ( Math.abs( d ) > 0.05 ) app.settings.timeOfDay = time % 24;
+
+		}
+
+		if ( speed !== null ) {
+
+			app.settings.timeSpeed = speed;
+			s.advance = speed !== 0;
+			if ( speed !== 0 ) s.timeSpeed = speed;
+
+		}
+
+		const set = ( k, lo, hi ) => {
+
+			const v = num( k, lo, hi );
+			if ( v === null || v === s[ k ] ) return false;
+			s[ k ] = v;
+			return true;
+
+		};
+		let spec = false;
+		for ( const [ k, lo, hi ] of [ [ 'wind', 0.5, 30 ], [ 'windDir', 0, 360 ], [ 'fetch', 5, 2000 ], [ 'swell', 0, 2 ] ] ) spec = set( k, lo, hi ) || spec;
+		if ( spec ) this._apply.spectrum();
+		if ( set( 'whitecaps', 0, 1 ) || spec ) this._apply.whitecaps();
+		if ( set( 'chop', 0, 1.6 ) ) fft.choppiness.value = s.chop;
+		if ( set( 'surf', 0, 1.4 ) ) shore.amplitude.value = s.surf;
+		if ( set( 'period', 5, 16 ) ) shore.period.value = s.period;
+		if ( set( 'clouds', 0, 1 ) && app.clouds ) app.clouds.coverage.value = s.clouds;
+		if ( set( 'cirrus', 0, 1 ) && app.clouds && app.clouds.cirrus ) app.clouds.cirrus.value = s.cirrus;
+		if ( set( 'haze', 0, 4 ) && app.haze ) app.haze.density.value = s.haze;
+		if ( set( 'clarity', 0.3, 2 ) ) this._apply.clarity();
+		if ( this.ui.isOpen ) this.ui.refresh();
+
+	}
+
+	// the four kinds of weather the dive's host picks from: a sea state and its sky
+	setWeather( name ) {
+
+		const sea = SEA[ name ];
+		if ( ! sea ) return;
+		this.setConditions( { ...sea, ...WEATHER_SKY[ name ] } );
+
+	}
+
+	get weather() {
+
+		const s = this.s;
+		let best = null, bd = Infinity;
+		for ( const k in SEA ) {
+
+			const d = Math.abs( SEA[ k ].wind - s.wind );
+			if ( d < bd ) {
+
+				bd = d;
+				best = k;
+
+			}
+
+		}
+
+		return best;
 
 	}
 

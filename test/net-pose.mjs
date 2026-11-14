@@ -94,6 +94,13 @@ function fakeJoin() {
 			};
 
 		},
+		makeState( ns ) {
+
+			let val = null, meta = null, cb = null;
+			room.state = { set: ( v, userId ) => { val = v; meta = { userId }; cb && cb( v, meta ); } };
+			return { get: () => val, getMeta: () => meta, set: async ( v ) => { room.state.set( v, 'me' ); room.stateSent = v; }, onChange: ( h ) => { cb = h; } };
+
+		},
 		makeAction( ns ) {
 
 			const a = actions[ ns ] = { sent: [], handler: null, onReceive() {}, onMessage( h ) { a.handler = h; }, send: async ( d ) => { a.sent.push( d ); } };
@@ -104,7 +111,7 @@ function fakeJoin() {
 		onUserLeave( cb ) { leaveCb = cb; },
 		leave: async () => {},
 		// test hooks
-		_arrive( id, name ) { users[ id ] = { peerIds: [ id ] }; profiles[ id ] = { name }; joinCb && joinCb( { userId: id } ); profileCb && profileCb( profiles[ id ], { userId: id } ); },
+		_arrive( id, name, host = false ) { users[ id ] = { peerIds: [ id ] }; profiles[ id ] = host ? { name, host: true } : { name }; joinCb && joinCb( { userId: id } ); profileCb && profileCb( profiles[ id ], { userId: id } ); },
 		_go( id ) { delete users[ id ]; leaveCb && leaveCb( { userId: id } ); },
 		actions,
 	};
@@ -119,6 +126,7 @@ function fakeJoin() {
 
 }
 
+const profiles_u9_host = ( r ) => r._arrive( 'u9', 'Hana', true );
 const { join, room } = fakeJoin();
 const net = await DiveRoom.join( 'abc234', { name: 'Ana', joinRoom: join } );
 check( room.cfg.roomId === 'dive-abc234' && room.cfg.password === 'abc234' && room.cfg.maxUsers === 8 && room.cfg.appId === 'zz85/one-breath', 'the room: dive-<code>, the code as its password, 8 divers at most' );
@@ -140,8 +148,32 @@ room.actions.pose.handler( encodePose( pose ), { userId: 'u1' } );
 room.actions.pose.handler( { x: 1 }, { userId: 'u1' } );
 check( poses.length === 1 && poses[ 0 ].mode === 'swim', 'poses: the good one arrives, junk doesn\'t' );
 check( net.say( '  hello  ' ) === 'hello' && room.actions.chat.sent[ 0 ].text === 'hello' && net.say( '  ' ) === null, 'saying something sends it trimmed; nothing sends nothing' );
+// the host's time and weather: taken from the host alone
+const worlds = [];
+net.onWorld( ( c ) => worlds.push( c ) );
+room.state.set( { time: 3 }, 'u1' );
+check( worlds.length === 0, 'time and weather from a player who isn\'t the host: ignored' );
+room._arrive( 'u9', 'Hana' );
+profiles_u9_host( room );
+check( net.hostId === 'u9' && people.u9.host, 'Hana\'s profile says she hosts' );
+room.state.set( { time: 7 }, 'u9' );
+check( worlds.length === 1 && worlds[ 0 ].time === 7, 'her time and weather come through' );
+net.setWorld( { time: 9 } );
+check( room.stateSent === undefined, 'a guest can\'t send time and weather' );
+net.setLook( { suit: 0x1b2a44, accent: 0xff7a1a, fins: 0x1f6fd1, junk: 5 } );
+room._arrive( 'u1', 'Ben' );
+check( people.me.look && people.me.look.suit === 0x1b2a44 && ! ( 'junk' in people.me.look ), 'your suit goes in your profile, colours only' );
+room._go( 'u9' );
+check( net.hostId === null, 'the host leaves: nobody hosts' );
 room._go( 'u1' );
 check( people && ! people.u1 && people.me, 'Ben leaves: only you are left' );
+
+const h = fakeJoin();
+const hostNet = await DiveRoom.join( 'qq77zz', { name: 'Hana', host: true, look: { accent: 0xffd21f }, joinRoom: h.join } );
+await new Promise( ( r ) => setTimeout( r, 0 ) );
+check( hostNet.isHost && hostNet.people().me.host && hostNet.people().me.look.accent === 0xffd21f, 'the maker of the dive hosts it, in a yellow trim' );
+hostNet.setWorld( { time: 9 } );
+check( h.room.stateSent && h.room.stateSent.time === 9, 'the host sends time and weather' );
 
 // ---- drawing a remote diver from a pose
 const scene = new Group();
@@ -171,6 +203,10 @@ for ( let i = 0; i < 120; i ++ ) divers.update( 1 / 60, 6.5 + i / 60, null );
 const h3 = d.headWorld( new Vector3() );
 const hip = new Vector3().setFromMatrixPosition( d.legs[ 0 ].matrixWorld );
 check( hip.y - h3.y > 0.3, `diving down: head first, hips ${ ( hip.y - h3.y ).toFixed( 2 ) } m above the head` );
+divers.setPeople( { me: { name: 'Ana', hue: 0.2, self: true }, u1: { name: 'Ben', hue: 0.6, self: false, look: { suit: 0x1f4f7a, accent: 0xffd21f, fins: 0x1f6fd1 } } } );
+check( d.diver.look.suit === 0x1f4f7a && d.diver.look.fins === 0x1f6fd1, 'he picks a blue suit and blue fins: his diver wears them' );
+const torsoColour = d.diver.torso.geometry.attributes.color.array.slice( 0, 3 );
+check( torsoColour[ 2 ] > torsoColour[ 0 ], 'the torso is painted blue now' );
 divers.setPeople( { me: { name: 'Ana', hue: 0.2, self: true } } );
 check( divers.count === 0 && scene.children.length === 0, 'he leaves: his diver goes' );
 

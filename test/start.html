@@ -14,12 +14,14 @@
 import '../src/ui/ui.css';
 import { UI } from '../src/ui/UI.js';
 import { MODES, DIFFICULTY } from '../src/game/Mode.js';
+import { suitPicker } from '../src/ui/SuitPicker.js';
 
 const qs = new URLSearchParams( location.search );
 const ui = new UI();
 ui.setModes( MODES, DIFFICULTY, { mode: qs.get( 'mode' ) || 'leisure', difficulty: 'standard' } );
 // ?dive=<code> as an invite link opens the multiplayer panel with it; ?nomp leaves it out
-if ( ! qs.has( 'nomp' ) ) ui.setMultiplayer( { code: qs.get( 'dive' ) || '', name: qs.get( 'name' ) || 'Diver 42' } );
+window.__look = { suit: 0x16191c, accent: 0xff7a1a, fins: 0x111316 };
+if ( ! qs.has( 'nomp' ) ) ui.setMultiplayer( { code: qs.get( 'dive' ) || '', name: qs.get( 'name' ) || 'Diver 42', extra: suitPicker( window.__look, ( l ) => { window.__look = l; } ).el } );
 ui.showStartOverlay( ( choice ) => { window.__started = JSON.parse( JSON.stringify( choice ) ); } );
 </script>
 </body>

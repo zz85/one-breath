@@ -1,6 +1,8 @@
 import { Group, Mesh, Vector3, Color, MathUtils } from '../engine/index.js';
 import { prepare, mergePrepared, cylinder, sphere, roundedBox, box, rod, mat4 } from '../world/boat/GeoKit.js';
 import { PAT } from './GameMaterials.js';
+import { cleanLook } from './Look.js';
+export { SUIT_COLOURS } from './Look.js';
 
 // A freediver: a jointed figure in a wetsuit, hood, mask, snorkel and long fins, posed in code
 // from a few numbers (the same ones the dive room sends, net/Pose.js), so your own body, the
@@ -42,7 +44,15 @@ const BLADE_L = 0.8, BLADE_N = 7; // the fin blade past the pocket, in slices
 // lifted straight up (their weight drives the body down), one long breaststroke pull of both arms
 // to the thighs, one hand to the nose to equalize, then finning.
 export const DUCK = { glide: 0.7, knife: 1.4, legs: 2.1, pull: 3.0, equalize: 3.6, end: 4.0 };
-const SUIT = { color: 0x16191c, rough: 0.55, pattern: PAT.rubber };
+const SUIT_BASE = { color: 0x16191c, rough: 0.55, pattern: PAT.rubber };
+
+export function resolveLook( look, hue = 0.55 ) {
+
+	const accent = _c.setHSL( hue, 0.75, 0.5 ).getHex();
+	const l = cleanLook( look ) || {};
+	return { suit: l.suit ?? 0x16191c, accent: l.accent ?? accent, fins: l.fins ?? l.accent ?? accent };
+
+}
 const SKIN = { color: 0x9a6a4a, rough: 0.55, pattern: PAT.skin };
 const BLACK = { color: 0x0b0d0e, rough: 0.5, pattern: PAT.rubber };
 const _c = new Color();
@@ -54,11 +64,13 @@ const clamp = MathUtils.clamp;
 
 export class Diver {
 
-	constructor( { material = null, hue = 0.55 } = {} ) {
+	constructor( { material = null, hue = 0.55, look = null } = {} ) {
 
 		this.material = material;
 		this.hue = hue;
-		const accent = _c.setHSL( hue, 0.75, 0.5 ).getHex();
+		this.look = resolveLook( look, hue );
+		const L = this.look;
+		this.parts = []; // { mesh, build }: setLook builds each again in the new colours
 		this.group = new Group();
 		this.group.name = 'Diver';
 		this.tilt = new Group();
@@ -66,23 +78,25 @@ export class Diver {
 		this.group.add( this.tilt );
 		this.tilt.add( this.body );
 		this.geos = [];
-		const mesh = ( geo, name ) => {
+		const mesh = ( build, name ) => {
 
+			const geo = build( L );
 			this.geos.push( geo );
 			const m = new Mesh( geo, material );
 			m.name = name;
 			m.castShadow = true;
+			this.parts.push( { mesh: m, build } );
 			return m;
 
 		};
 
 		// torso: hips, chest with the suit's stripes, weight belt
-		this.torso = mesh( buildTorso( accent ), 'DiverTorso' );
+		this.torso = mesh( buildTorso, 'DiverTorso' );
 		this.body.add( this.torso );
 		// head on the neck: hood, face, mask, snorkel (hidden in first person)
 		this.neck = new Group();
 		this.neck.position.set( 0, NECK_Y, 0.01 );
-		this.head = mesh( buildHead( accent ), 'DiverHead' );
+		this.head = mesh( buildHead, 'DiverHead' );
 		this.neck.add( this.head );
 		this.body.add( this.neck );
 		// arms: shoulder -> upper arm -> elbow -> forearm and hand
@@ -91,10 +105,10 @@ export class Diver {
 
 			const shoulder = new Group();
 			shoulder.position.set( s * SHOULDER.x, SHOULDER.y, 0 );
-			const upper = mesh( buildUpperArm( s ), 'DiverUpperArm' );
+			const upper = mesh( ( L ) => buildUpperArm( L, s ), 'DiverUpperArm' );
 			const elbow = new Group();
 			elbow.position.set( 0, - UPPER_ARM, 0 );
-			const lower = mesh( buildForearm( s ), 'DiverForearm' );
+			const lower = mesh( ( L ) => buildForearm( L, s ), 'DiverForearm' );
 			elbow.add( lower );
 			shoulder.add( upper, elbow );
 			this.body.add( shoulder );
@@ -111,15 +125,15 @@ export class Diver {
 
 			const hip = new Group();
 			hip.position.set( s * HIP.x, HIP.y, 0 );
-			const thigh = mesh( buildThigh(), 'DiverThigh' );
+			const thigh = mesh( buildThigh, 'DiverThigh' );
 			const knee = new Group();
 			knee.position.set( 0, - THIGH, 0 );
-			const shin = mesh( buildShin(), 'DiverShin' );
+			const shin = mesh( buildShin, 'DiverShin' );
 			const ankle = new Group();
 			ankle.position.set( 0, - SHIN, - 0.01 );
-			const foot = mesh( buildFoot(), 'DiverFoot' );
-			const fin = mesh( buildPocket(), 'DiverFinPocket' );
-			const blade = new Blade( accent, mesh );
+			const foot = mesh( buildFoot, 'DiverFoot' );
+			const fin = mesh( buildPocket, 'DiverFinPocket' );
+			const blade = new Blade( mesh );
 			blade.root.position.set( 0, - 0.03, FOOT_L );
 			ankle.add( foot, fin, blade.root );
 			knee.add( shin, ankle );
@@ -145,6 +159,25 @@ export class Diver {
 		this.headVisible = true;
 		this.armsVisible = true;
 		this.t = Math.random() * 10;
+
+	}
+
+	// new colours ({ suit, accent, fins }): each part is built again, the pose carries on
+	setLook( look ) {
+
+		const L = resolveLook( look, this.hue );
+		const cur = this.look;
+		if ( cur && cur.suit === L.suit && cur.accent === L.accent && cur.fins === L.fins ) return;
+		this.look = L;
+		for ( const part of this.parts ) {
+
+			const old = part.mesh.geometry;
+			part.mesh.geometry = part.build( L );
+			const i = this.geos.indexOf( old );
+			if ( i >= 0 ) this.geos[ i ] = part.mesh.geometry;
+			old.dispose();
+
+		}
 
 	}
 
@@ -386,7 +419,7 @@ export class Diver {
 // the hinges as water drag: the root bends first, and the bend travels out along the blade.
 class Blade {
 
-	constructor( accent, mesh ) {
+	constructor( mesh ) {
 
 		this.root = new Group();
 		this.joints = [];
@@ -399,7 +432,7 @@ class Blade {
 			const j = new Group();
 			if ( i > 0 ) j.position.set( 0, 0, dz );
 			const t0 = i / BLADE_N, t1 = ( i + 1 ) / BLADE_N;
-			j.add( mesh( buildBladeSlice( accent, dz, t0, t1 ), 'DiverBlade' ) );
+			j.add( mesh( ( L ) => buildBladeSlice( L, dz, t0, t1 ), 'DiverBlade' ) );
 			parent.add( j );
 			this.joints.push( j );
 			parent = j;
@@ -442,11 +475,12 @@ class Blade {
 
 // ---- geometry, in the figure frame (facing +Z, feet at the origin)
 
-function buildTorso( accent ) {
+function buildTorso( L ) {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
-	const ACC = { color: accent, rough: 0.5 };
+	const ACC = { color: L.accent, rough: 0.5 };
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	// a lean swimmer's torso: hips, waist, chest, shoulders in one smooth suit; a stripe down each side
 	add( roundedBox( 0.3, 0.18, 0.19, 0.075, 2 ), { ...SUIT, matrix: mat4( 0, 0.95, 0 ) } );
 	add( roundedBox( 0.26, 0.2, 0.165, 0.07, 2 ), { ...SUIT, matrix: mat4( 0, 1.12, 0 ) } );
@@ -462,12 +496,13 @@ function buildTorso( accent ) {
 }
 
 // the head in the neck's frame (the neck pivot at NECK_Y)
-function buildHead( accent ) {
+function buildHead( L ) {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
 	const y = HEAD_Y - NECK_Y;
-	const ACC = { color: accent, rough: 0.5 };
+	const ACC = { color: L.accent, rough: 0.5 };
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	add( sphere( 0.098, 14, 10 ), { ...SUIT, matrix: mat4( 0, y, 0, 0, 0, 0, 1, 1.12, 1.04 ) } );
 	// the face in the hood's opening
 	add( sphere( 0.078, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...SKIN, matrix: mat4( 0, y - 0.03, 0.04, Math.PI / 2, 0, 0, 0.9, 1, 1.1 ) } );
@@ -481,9 +516,10 @@ function buildHead( accent ) {
 }
 
 // an upper arm hanging from the shoulder pivot (the arm points -Y)
-function buildUpperArm( s ) {
+function buildUpperArm( L, s ) {
 
 	const P = [];
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( s * 0.005, - 0.01, 0 ) } ) );
 	P.push( prepare( rod( V( s * 0.01, - 0.02, 0 ), V( s * 0.015, - UPPER_ARM, 0 ), 0.042, 10, 0.035 ), SUIT ) );
 	return mergePrepared( P );
@@ -491,18 +527,20 @@ function buildUpperArm( s ) {
 }
 
 // the forearm and the bare hand from the elbow pivot
-function buildForearm( s ) {
+function buildForearm( L, s ) {
 
 	const P = [];
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	P.push( prepare( rod( V( s * 0.015, 0.02, 0 ), V( s * 0.015, - FOREARM, 0.01 ), 0.035, 10, 0.028 ), SUIT ) );
 	P.push( prepare( roundedBox( 0.07, 0.17, 0.022, 0.01, 2 ), { ...SKIN, matrix: mat4( s * 0.015, - FOREARM - 0.085, 0.012, 0.1, 0, 0 ) } ) );
 	return mergePrepared( P );
 
 }
 
-function buildThigh() {
+function buildThigh( L ) {
 
 	const P = [];
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	P.push( prepare( sphere( 0.066, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.02, 0 ) } ) );
 	P.push( prepare( rod( V( 0, - 0.02, 0 ), V( 0, - THIGH, 0.0 ), 0.064, 10, 0.05 ), SUIT ) );
 	return mergePrepared( P );
@@ -510,9 +548,10 @@ function buildThigh() {
 }
 
 // the shin from the knee pivot (the foot is its own part, on the ankle)
-function buildShin() {
+function buildShin( L ) {
 
 	const P = [];
+	const SUIT = { ...SUIT_BASE, color: L.suit };
 	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.01, 0 ) } ) );
 	P.push( prepare( rod( V( 0, - 0.01, 0 ), V( 0, - SHIN, - 0.01 ), 0.048, 10, 0.038 ), SUIT ) );
 	return mergePrepared( P );
@@ -540,13 +579,13 @@ function buildPocket() {
 
 // one slice of the blade, from its hinge (z 0) to the next (z dz): the blade tapers a little to
 // the tip, its side rails taper more
-function buildBladeSlice( accent, dz, t0, t1 ) {
+function buildBladeSlice( L, dz, t0, t1 ) {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
 	const w = ( t ) => 0.19 - 0.025 * t;
 	const w0 = w( t0 ), w1 = w( t1 );
-	add( box( ( w0 + w1 ) / 2, 0.006, dz + 0.004 ), { color: accent, rough: 0.3, matrix: mat4( 0, 0, dz / 2 ) } );
+	add( box( ( w0 + w1 ) / 2, 0.006, dz + 0.004 ), { color: L.fins, rough: 0.3, matrix: mat4( 0, 0, dz / 2 ) } );
 	const r = 0.028 * ( 1 - 0.7 * t0 ) + 0.004;
 	for ( const s of [ - 1, 1 ] ) add( box( 0.01, r, dz + 0.004 ), { ...BLACK, matrix: mat4( s * ( w0 + w1 ) / 4 - s * 0.002, 0, dz / 2 ) } );
 	return mergePrepared( P );

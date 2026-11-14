@@ -2,13 +2,18 @@ import { encodePose, makeDiveCode, cleanDiveCode, cleanName } from '../net/Pose.
 import { DiveRoom, MAX_DIVERS } from '../net/DiveRoom.js';
 import { RemoteDivers } from './RemoteDivers.js';
 import { NetUI } from '../ui/NetUI.js';
+import { myLook, saveLook, cleanLook, personColour } from './Look.js';
 
 // Diving with friends: an invite link (?dive=<code>) puts everyone who opens it in one
 // peer-to-peer room (net/DiveRoom.js). Each player sends their own pose ~12 times a second,
 // sees the others as divers with name tags (game/RemoteDivers.js), and can chat (ui/NetUI.js).
-// The fish, weather and time of day are still each player's own.
+// Everyone wears their own suit colours (game/Look.js). The host (who made the dive) sets the time
+// of day and the weather for everyone; the fish and other animals are still each player's own.
 const SEND_HZ = 12;
+const WORLD_EVERY = 1; // s: how often the host checks its time and weather for a change
+const TIME_EVERY = 5; // s: with time running, how often the host sends it again
 const NAME_KEY = 'onebreath.name';
+const HOSTED_KEY = 'onebreath.hosted'; // the codes of the dives this browser made: you're their host
 
 export class NetPlay {
 
@@ -26,6 +31,10 @@ export class NetPlay {
 		this._buf = new Float32Array( 10 );
 		this._pose = {};
 		this.name = loadName();
+		this.look = myLook();
+		this._worldT = 0;
+		this._worldSent = null;
+		this._worldSentAt = - Infinity;
 		// an invite link's code: joined once the player starts (start()), so the start screen can
 		// ask their name first. A page with no start screen (tests) joins at once.
 		this.linkCode = cleanDiveCode( this.app.qs && this.app.qs.get( 'dive' ) );
@@ -65,6 +74,7 @@ export class NetPlay {
 
 		if ( this.room || this.joining ) return this.copyLink();
 		const code = makeDiveCode( randomUnit );
+		rememberHosted( code );
 		await this.join( code );
 		this.copyLink();
 
@@ -102,7 +112,7 @@ export class NetPlay {
 		this.code = code;
 		history.replaceState( null, '', this.link( code ) );
 		if ( this.ui ) this.ui.setRoom( null, {}, true );
-		const joining = this.joining = DiveRoom.join( code, { name: this.name } );
+		const joining = this.joining = DiveRoom.join( code, { name: this.name, look: this.look, host: isHosted( code ) } );
 		let room;
 		try {
 
@@ -137,9 +147,12 @@ export class NetPlay {
 		room.onChat( ( id, text ) => {
 
 			const who = this.people[ id ];
-			if ( this.ui ) this.ui.chat( who ? who.name : 'Diver', text, who ? who.hue : 0.5 );
+			if ( this.ui ) this.ui.chat( who ? who.name : 'Diver', text, personColour( who ) );
 
 		} );
+		// the host's time and weather (never your own: the host's own writes don't come back)
+		room.onWorld( ( c ) => this.applyWorld( c ) );
+		this._worldSent = null;
 		room.onError( ( e ) => {
 
 			if ( ! this.ui ) return;
@@ -177,7 +190,84 @@ export class NetPlay {
 		for ( const id in people ) if ( ! before[ id ] && ! people[ id ].self && Object.keys( before ).length ) this.ui.system( `${ people[ id ].name } is in the water` );
 		for ( const id in before ) if ( ! people[ id ] && ! before[ id ].self ) this.ui.system( `${ before[ id ].name } left` );
 		for ( const id in people ) if ( before[ id ] && ! people[ id ].self && before[ id ].name !== people[ id ].name ) this.ui.system( `${ before[ id ].name } is now ${ people[ id ].name }` );
+		const host = Object.keys( people ).find( ( id ) => people[ id ].host && ! people[ id ].self );
+		const hadHost = Object.keys( before ).find( ( id ) => before[ id ].host && ! before[ id ].self );
+		if ( host && ! hadHost ) this.ui.system( `${ people[ host ].name } hosts this dive: they set the time and weather` );
 		this.ui.setRoom( this.code, people, false );
+
+	}
+
+	get isHost() {
+
+		return !! ( this.room && this.room.isHost );
+
+	}
+
+	// the host's name, where someone else hosts
+	get hostName() {
+
+		const id = this.room && this.room.hostId;
+		const p = id && this.people[ id ];
+		return p && ! p.self ? p.name : null;
+
+	}
+
+	// a guest: the host's time and weather (AppUI clamps every number)
+	applyWorld( c ) {
+
+		if ( this.isHost || ! this.app.ui || ! this.app.ui.setConditions ) return;
+		this.app.ui.setConditions( c );
+		if ( this.ui ) this.ui.worldChanged();
+
+	}
+
+	// the host: time and weather to everyone, when they change (and the time every few seconds
+	// while it runs, so everyone's sun stays together)
+	_sendWorld( dt, now ) {
+
+		if ( ! this.isHost || ! this.app.ui || ! this.app.ui.getConditions ) return;
+		this._worldT -= dt;
+		if ( this._worldT > 0 ) return;
+		this._worldT = WORLD_EVERY;
+		const c = this.app.ui.getConditions();
+		const last = this._worldSent;
+		const { time, ...rest } = c;
+		const changed = ! last || JSON.stringify( rest ) !== JSON.stringify( last.rest ) || Math.abs( time - last.time ) > ( c.speed ? 0.5 : 0.01 ) || ( c.speed && now - this._worldSentAt > TIME_EVERY );
+		if ( ! changed ) return;
+		this._worldSent = { time, rest };
+		this._worldSentAt = now;
+		this.room.setWorld( round( c ) );
+
+	}
+
+	// the host's quick controls (ui/NetUI.js): a time of day, time running or not, a weather
+	setTime( hour, speed ) {
+
+		const app = this.app;
+		if ( ! app.ui || ! app.ui.setConditions ) return;
+		app.ui.setConditions( { time: hour, ...( speed !== undefined ? { speed } : {} ) } );
+		app.settings.timeOfDay = hour; // exactly, not eased
+		this._worldT = 0;
+		this._worldSent = null;
+
+	}
+
+	setWeather( name ) {
+
+		if ( ! this.app.ui || ! this.app.ui.setWeather ) return;
+		this.app.ui.setWeather( name );
+		this._worldT = 0;
+
+	}
+
+	// your suit: worn at once, kept for next time, sent to the dive
+	setLook( look ) {
+
+		const l = { ...this.look, ...( cleanLook( look ) || {} ) };
+		this.look = l;
+		saveLook( l );
+		if ( this.game.me && this.game.me.diver ) this.game.me.diver.setLook( l );
+		if ( this.room ) this.room.setLook( l );
 
 	}
 
@@ -197,7 +287,7 @@ export class NetPlay {
 		if ( ! this.room ) return;
 		const sent = this.room.say( text );
 		const me = this.people[ this.room.selfId ];
-		if ( sent && this.ui ) this.ui.chat( this.name, sent, me ? me.hue : 0.5, true );
+		if ( sent && this.ui ) this.ui.chat( this.name, sent, personColour( me ), true );
 
 	}
 
@@ -223,6 +313,7 @@ export class NetPlay {
 		if ( this.divers ) this.divers.update( dt, now, this.app.camera );
 		if ( this.ui ) this.ui.update( dt );
 		if ( ! this.room ) return;
+		this._sendWorld( dt, now );
 		this._sendT -= dt;
 		if ( this._sendT > 0 ) return;
 		this._sendT = 1 / SEND_HZ;
@@ -248,6 +339,40 @@ export class NetPlay {
 		return o;
 
 	}
+
+}
+
+const round = ( c ) => {
+
+	const o = {};
+	for ( const k in c ) o[ k ] = typeof c[ k ] === 'number' ? Math.round( c[ k ] * 1000 ) / 1000 : c[ k ];
+	return o;
+
+};
+
+function isHosted( code ) {
+
+	try {
+
+		return ( JSON.parse( localStorage.getItem( HOSTED_KEY ) || '[]' ) ).includes( code );
+
+	} catch ( e ) {
+
+		return false;
+
+	}
+
+}
+
+function rememberHosted( code ) {
+
+	try {
+
+		const list = ( JSON.parse( localStorage.getItem( HOSTED_KEY ) || '[]' ) ).filter( ( c ) => c !== code );
+		list.push( code );
+		localStorage.setItem( HOSTED_KEY, JSON.stringify( list.slice( - 20 ) ) );
+
+	} catch ( e ) { /* private mode */ }
 
 }
 
