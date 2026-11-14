@@ -29,7 +29,8 @@ const HELM_REACH = 0.75; // m from the helm seat to take the wheel
 
 // First-person walker / swimmer / boat captain.
 //   walk : capsule on terrain + walkable colliders, wading slows you down
-//   swim : floats with the head at the surface; look down + W (or C) to dive, Space to rise
+//   swim : floats with the head at the surface; look down + W (or C) to dive, Space to rise;
+//          V toggles first person / a chase camera behind you
 //   deck : aboard, walking in the boat's frame (it moves and rocks under you); E at the helm
 //          takes the wheel, E near a pier / the beach steps ashore
 //   boat : at the helm, driving; V toggles helm (1st person) / chase (3rd person) camera, E stands up
@@ -79,6 +80,12 @@ export class Player {
 		this.camPos = new THREE.Vector3();
 		this.camInit = false;
 		this.wasUnder = false;
+		// swimming: V toggles the view from your eyes / a camera a few metres behind you (see your
+		// own body, the way the freediving photos look); `eye` is where your eyes are either way
+		this.swimCam = 'first';
+		this.swimDist = 3.4;
+		this.swimCamInit = false;
+		this.eye = new THREE.Vector3();
 
 		// on deck: position and heading in the boat frame (+Z forward, yaw 0 looks forward)
 		this.deckPos = new THREE.Vector3();
@@ -204,9 +211,48 @@ export class Player {
 		this.camOff = ( this.camOff + j ) * e;
 		this.camOffV = ( this.camOffV - w * j ) * e;
 		eye.y += this.camOff;
-		this.camera.position.copy( eye );
+		this.eye.copy( eye );
+		if ( this.mode === 'swim' && this.swimCam === 'third' ) this.updateChaseCam( dt, eye );
+		else {
+
+			this.swimCamInit = false;
+			this.camera.position.copy( eye );
+			this.camera.quaternion.setFromEuler( _e.set( this.pitch, this.yaw, 0 ) );
+
+		}
+
 		this._camY = this.camera.position.y;
-		this.camera.quaternion.setFromEuler( _e.set( this.pitch, this.yaw, 0 ) );
+
+	}
+
+	get thirdPerson() {
+
+		return this.mode === 'swim' && this.swimCam === 'third';
+
+	}
+
+	// swimming in third person: the camera a few metres behind the eyes along the view, a little
+	// above, looking past you; the wheel moves it closer or further. It stays out of the seabed.
+	updateChaseCam( dt, eye ) {
+
+		const inp = this.input;
+		const wheel = inp.consumeWheel();
+		this.swimDist = THREE.MathUtils.clamp( this.swimDist * ( 1 + wheel * 0.08 ), 1.8, 8 );
+		_fwd.set( 0, 0, - 1 ).applyEuler( _e.set( this.pitch, this.yaw, 0 ) );
+		const want = _v.copy( eye ).addScaledVector( _fwd, - this.swimDist );
+		want.y += 0.3 + 0.08 * this.swimDist;
+		const g = this.groundAt( want.x, want.z, want.y + 0.5 );
+		if ( want.y < g + 0.35 ) want.y = g + 0.35;
+		if ( ! this.swimCamInit ) {
+
+			this.camPos.copy( want );
+			this.swimCamInit = true;
+
+		}
+
+		this.camPos.lerp( want, 1 - Math.exp( - dt * 9 ) );
+		this.camera.position.copy( this.camPos );
+		this.camera.lookAt( _v2.copy( eye ).addScaledVector( _fwd, 1.2 ) );
 
 	}
 
@@ -334,6 +380,7 @@ export class Player {
 		const inp = this.input;
 		const p = this.position;
 		const surfaceY = this.waterH;
+		if ( inp.hit( 'KeyV' ) && ! this.frozen ) this.swimCam = this.swimCam === 'first' ? 'third' : 'first';
 		// look-relative movement (diving follows the view)
 		_fwd.set( 0, 0, - 1 ).applyEuler( _e.set( this.pitch, this.yaw, 0 ) );
 		_right.set( - Math.cos( this.yaw ), 0, Math.sin( this.yaw ) ).negate();
@@ -383,7 +430,7 @@ export class Player {
 
 		}
 
-		const under = this.camera.position.y < surfaceY - 0.05;
+		const under = p.y + SWIM_EYE < surfaceY - 0.05;
 		if ( under !== this.wasUnder && this.audio ) {
 
 			if ( under ) this.audio.submerge();

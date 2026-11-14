@@ -280,7 +280,7 @@ export class TouchControls {
 			up: swim || free || p.mode === 'walk' || p.mode === 'deck',
 			dive: swim || free,
 			gun: g.canFish && ( gun || sp.allowGun !== false ) && ( gun || swim || p.surface === 'wetsand' || p.surface === 'water' ),
-			cam: helm,
+			cam: helm || swim,
 			bag: true,
 		};
 		for ( const id in this.btn ) this.btn[ id ].classList.toggle( 'is-shown', !! show[ id ] );

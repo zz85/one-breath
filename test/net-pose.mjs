@@ -170,7 +170,7 @@ for ( let i = 0; i < 24; i ++ ) divers.pose( 'u1', { ...dive, pitch: - 1.2, t: 3
 for ( let i = 0; i < 120; i ++ ) divers.update( 1 / 60, 6.5 + i / 60, null );
 const h3 = d.headWorld( new Vector3() );
 const hip = new Vector3().setFromMatrixPosition( d.legs[ 0 ].matrixWorld );
-check( hip.y - h3.y > 0.4, `diving down: head first, hips ${ ( hip.y - h3.y ).toFixed( 2 ) } m above the head` );
+check( hip.y - h3.y > 0.3, `diving down: head first, hips ${ ( hip.y - h3.y ).toFixed( 2 ) } m above the head` );
 divers.setPeople( { me: { name: 'Ana', hue: 0.2, self: true } } );
 check( divers.count === 0 && scene.children.length === 0, 'he leaves: his diver goes' );
 

@@ -16,6 +16,7 @@ import { TouchControls } from '../ui/TouchControls.js';
 import { FallDamage } from './FallDamage.js';
 import { FISH } from './FishTable.js';
 import { NetPlay } from './NetPlay.js';
+import { PlayerDiver } from './PlayerDiver.js';
 
 // health a fish gives when eaten
 export const eatHealth = ( kg ) => Math.min( 40, 8 + 12 * kg );
@@ -42,6 +43,8 @@ export class Game {
 		this.display = new CatchDisplay( { scene: app.scene, stall: this.stand.iceFish() } );
 		this.chandlery = new Chandlery( { scene: app.scene, terrain: app.terrainData, colliders: app.colliders, material: this.stand.material } );
 		this.vendors = [ this.stand.vendor, this.chandlery.vendor ];
+		// your own body in the water (game/PlayerDiver.js)
+		this.me = new PlayerDiver( { scene: app.scene, material: this.stand.material, player: app.player } );
 		// boat upgrades: engine (thrust / top speed) and deck floodlights for night fishing
 		const b = app.boatCtl;
 		this._engineBase = { maxThrust: b.maxThrust, pitchSpeed: b.pitchSpeed };
@@ -270,6 +273,8 @@ export class Game {
 
 		// fall damage: gore overlays, camera shake, death sequence (after Player.update sets the camera)
 		this.fallDamage.update( dt, p, app.audio );
+		// your body, hung from your eyes (after the camera is final)
+		this.me.update( dt, { gun: !! sp.equipped, blackout: sp.phase === 'blackout' } );
 
 		// the other divers in your dive room, and your own pose for them
 		if ( this.net ) this.net.update( dt );

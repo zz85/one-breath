@@ -376,7 +376,8 @@ export class Spearfishing {
 		const t = performance.now() / 1000;
 		const amp = ( ( this.aiming ? 0.006 : 0.02 ) * ( 1 + 2.5 * this.apnea.hypoxia ) + this.contraction * 0.03 ) * ( this.easy ? 0.5 : 1 );
 		const sway = { x: Math.sin( t * 0.9 ) * amp + Math.sin( t * 2.3 ) * amp * 0.3, y: Math.sin( t * 1.3 + 1 ) * amp * 0.8 - this.contraction * 0.02 };
-		gun.update( dt, { visible: can && p.mode !== 'boat', sway } );
+		// (not from the chase camera: the gun is drawn in front of the lens, and the figure's arms stand in)
+		gun.update( dt, { visible: can && p.mode !== 'boat' && ! p.thirdPerson, sway } );
 
 		// ---- fish taken from a school come back once you're away from it
 		for ( let k = this.gone.length - 1; k >= 0; k -- ) {
