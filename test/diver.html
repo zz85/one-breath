@@ -21,18 +21,20 @@
 <div id="ui">
 	<b>Pose</b>
 	<div class="row" id="poses"></div>
+	<b>Look</b>
+	<div class="row" id="looks"></div>
 	<b>Inputs</b>
 	<label>speed <input id="speed" type="range" min="0" max="3" step="0.05" value="1.5"><span id="speedV"></span></label>
 	<label>pitch <input id="pitch" type="range" min="-1.5" max="1.5" step="0.05" value="0"><span id="pitchV"></span></label>
 	<label>time <input id="slow" type="range" min="0.05" max="1" step="0.05" value="1"><span id="slowV"></span></label>
 	<b>Readout</b>
 	<div id="out"><small>...</small></div>
-	<small>Drag to orbit, wheel to zoom. ?view=first for your own eyes. ?pose=swim&speed=1.5&pitch=0&frames=N for a still.</small>
+	<small>Drag to orbit, wheel to zoom. ?view=first for your own eyes. ?pose=swim&speed=1.5&pitch=0&look=floral&frames=N&ui=0 for a still.</small>
 </div>
 <script type="module">
 // Dev / test page for the freediver figure (game/Diver.js) on its own: its poses, the kick and the
 // blades bending, animated and lit by the engine, with no world around it. Pick a pose, drag the
-// speed and pitch, slow time down to watch the blades. window.__done is set once `frames` frames
+// speed and pitch, slow time down to watch the blades; pick a look (the presets in game/Look.js). window.__done is set once `frames` frames
 // are drawn (2 by default), window.__diver is the figure, window.__stats the renderer's counts.
 import { GPU } from '../src/engine/gpu/GPU.js';
 import { RenderTarget } from '../src/engine/gpu/Texture.js';
@@ -43,7 +45,7 @@ import { MeshRenderer } from '../src/engine/render/MeshRenderer.js';
 import { SunShadows } from '../src/engine/render/Shadows.js';
 import { FullscreenPass } from '../src/engine/render/FullscreenPass.js';
 import * as E from '../src/engine/index.js';
-import { Diver, DUCK } from '../src/game/Diver.js';
+import { Diver, DUCK, LOOK_PRESETS, presetLook } from '../src/game/Diver.js';
 import { createPropMaterial } from '../src/game/GameMaterials.js';
 
 const qs = new URLSearchParams( location.search );
@@ -56,6 +58,7 @@ ground.position.y = - 2.6;
 scene.add( ground );
 const material = createPropMaterial( 'diver' );
 const first = qs.get( 'view' ) === 'first';
+if ( qs.get( 'ui' ) === '0' ) document.getElementById( 'ui' ).style.display = 'none'; // a clean still
 
 const POSES = {
 	stand: { label: 'Standing', pose: { mode: 'walk', floating: false, speed: 0, pitch: 0 } },
@@ -65,7 +68,9 @@ const POSES = {
 	gun: { label: 'Gun', pose: { mode: 'swim', floating: false, speed: 1.0, pitch: - 0.2, gun: true } },
 	blackout: { label: 'Blackout', pose: { mode: 'swim', floating: false, speed: 0.3, pitch: 0, blackout: true } },
 };
-const diver = window.__diver = new Diver( { material, hue: 0.08 } );
+// the looks (game/Look.js): the default suit in this page's hue, and each preset; ?look=fluyd
+let lookName = qs.get( 'look' ) || 'default';
+const diver = window.__diver = new Diver( { material, hue: 0.08, look: presetLook( lookName ) } );
 scene.add( diver.group );
 let poseName = qs.get( 'pose' ) || ( first ? 'surface' : 'swim' );
 const inputs = { speed: Number( qs.get( 'speed' ) ?? POSES[ poseName ].pose.speed ), pitch: Number( qs.get( 'pitch' ) ?? POSES[ poseName ].pose.pitch ), slow: 1 };
@@ -84,6 +89,18 @@ for ( const k in POSES ) {
 
 }
 
+const looksEl = $( 'looks' );
+const LOOKS = { default: { label: 'Default suit' }, ...LOOK_PRESETS };
+for ( const k in LOOKS ) {
+
+	const b = document.createElement( 'button' );
+	b.textContent = LOOKS[ k ].label;
+	b.onclick = () => { lookName = k; diver.setLook( presetLook( k ) ); sync(); };
+	b.dataset.k = k;
+	looksEl.append( b );
+
+}
+
 // the duck dive: from the surface pose, the sequence runs on the figure's own clock (DUCK), the
 // view turning down through the fold as the player's does; ?duck=<seconds> freezes it there
 const duckBtn = document.createElement( 'button' );
@@ -95,6 +112,7 @@ const duckAt = qs.has( 'duck' ) ? Number( qs.get( 'duck' ) ) : null;
 const sync = () => {
 
 	for ( const b of posesEl.children ) b.classList.toggle( 'on', b.dataset.k === poseName );
+	for ( const b of looksEl.children ) b.classList.toggle( 'on', b.dataset.k === lookName );
 	$( 'speed' ).value = inputs.speed; $( 'speedV' ).textContent = inputs.speed.toFixed( 2 ) + ' m/s';
 	$( 'pitch' ).value = inputs.pitch; $( 'pitchV' ).textContent = ( inputs.pitch * 180 / Math.PI ).toFixed( 0 ) + ' deg';
 	$( 'slow' ).value = inputs.slow; $( 'slowV' ).textContent = inputs.slow.toFixed( 2 ) + 'x';
@@ -126,7 +144,7 @@ const placeCamera = () => {
 
 	const standing = want().mode === 'walk';
 	diver.place( Math.PI * 0.8, new E.Vector3( 0, standing ? - 2.6 : 0, 0 ) );
-	const target = new E.Vector3( 0, standing ? - 1.7 : - 0.5, 0 );
+	const target = new E.Vector3( 0, ( standing ? - 1.7 : - 0.5 ) + Number( qs.get( 'ty' ) || 0 ), 0 ); // ?ty=0.8 looks at the head
 	camera.position.set( Math.sin( orbit.yaw ) * Math.cos( orbit.pitch ), Math.sin( orbit.pitch ), Math.cos( orbit.yaw ) * Math.cos( orbit.pitch ) ).multiplyScalar( orbit.dist ).add( target );
 	camera.lookAt( target );
 

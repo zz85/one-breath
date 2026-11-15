@@ -2,7 +2,8 @@
 // the chase camera while swimming (player/Player.js): posed on the CPU, no GPU.
 //   node test/diver.mjs
 import * as E from '../src/engine/index.js';
-import { Diver, DUCK } from '../src/game/Diver.js';
+import { Diver, DUCK, resolveLook } from '../src/game/Diver.js';
+import { cleanLook, LOOK_PRESETS, presetLook } from '../src/game/Look.js';
 import { PlayerDiver } from '../src/game/PlayerDiver.js';
 import { Player } from '../src/player/Player.js';
 import { TerrainData } from '../src/world/TerrainData.js';
@@ -247,6 +248,38 @@ player.position.set( 53.6, terrain.heightAt( 53.6, - 77 ), - 77 );
 player.mode = 'walk';
 step( 0.2 );
 check( ! me.diver.group.visible, 'walking: the body is hidden' );
+
+// ---- looks (game/Look.js): what a diver wears, from colours to whole presets
+check( cleanLook( { suit: 1, pattern: 'floral', hood: false, legs: false, height: 1.62, skin: 0xa8734f, junk: 1, hair: 'red' } )?.pattern === 'floral', 'cleanLook keeps a pattern it knows' );
+const cl = cleanLook( { pattern: 'plaid', hood: true, legs: true, height: 3, hair: 'red', hands: - 1 } );
+check( cl === null, `and drops a pattern, a hood, legs, a height or a colour it doesn't (${ JSON.stringify( cl ) })` );
+check( cleanLook( { height: 1.75 } ) === null && cleanLook( { height: 1.624 } ).height === 1.62, 'the default height is left out, a height is kept to the cm' );
+check( Object.keys( LOOK_PRESETS ).length >= 2 && presetLook( 'fluyd' ).pattern === 'strokes' && presetLook( 'floral' ).hood === false && presetLook( 'nobody' ) === null, 'the presets: a Fluyd suit in strokes, a floral swimsuit with no hood' );
+const R = resolveLook( null, 0.3 );
+check( R.hood && R.legs && R.pattern === 'rubber' && R.height === 1.75 && R.hands === null, 'no look: a hooded black suit, 1.75 m, bare hands' );
+
+// the floral look: no hood, so hair; bare legs; 1.62 m tall, which scales the figure and so where
+// the eyes are
+const her = new Diver( { material: null, look: presetLook( 'floral' ) } );
+her.setPose( { mode: 'walk', floating: false, pitch: 0, speed: 0 } );
+run( her, 2 );
+her.place( 0, new E.Vector3( 0, 0, 0 ) );
+const herEye = her.eyeWorld( new E.Vector3() ), herHead = her.headWorld( new E.Vector3() );
+check( near( herHead.y, 1.63 * 1.62 / 1.75, 0.02 ), `1.62 m tall: the head at ${ herHead.y.toFixed( 2 ) } m` );
+check( herEye.y > herHead.y && herEye.y < 1.6, `her eyes at ${ herEye.y.toFixed( 2 ) } m` );
+check( her.head.geometry.attributes.position.count > d.head.geometry.attributes.position.count, 'no hood: the hair adds to the head' );
+// placeEye puts the eyes where the camera is, however tall she is
+her.placeEye( 0.4, new E.Vector3( 3, - 1, 2 ) );
+check( her.eyeWorld( new E.Vector3() ).distanceTo( new E.Vector3( 3, - 1, 2 ) ) < 1e-6, 'placeEye: her eyes exactly at the camera' );
+// a new look rebuilds every part once, and the same look again is a no-op
+const before = her.parts.map( ( p ) => p.mesh.geometry );
+her.setLook( presetLook( 'fluyd' ) );
+check( her.parts.every( ( p, i ) => p.mesh.geometry !== before[ i ] ) && near( her.tilt.scale.x, 1.62 / 1.75 ), 'setLook: every part built again, the height kept' );
+const after = her.parts.map( ( p ) => p.mesh.geometry );
+her.setLook( presetLook( 'fluyd' ) );
+check( her.parts.every( ( p, i ) => p.mesh.geometry === after[ i ] ), 'the same look again changes nothing' );
+her.setLook( null );
+check( near( her.tilt.scale.x, 1 ), 'no look: back to 1.75 m' );
 
 console.log( fails ? `${ fails } failed` : 'all passed' );
 process.exit( fails ? 1 : 0 );

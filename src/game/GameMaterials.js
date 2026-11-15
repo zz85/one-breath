@@ -8,10 +8,13 @@ import { commonModule } from '../engine/render/wgsl/common.js';
 //   pattern 0 plain, 1 weathered wood (grain along local y... planks: see woodAxis), 2 canvas /
 //   cloth, 3 skin, 4 cork, 5 painted metal with rust; fishing tackle (local +Y = the rod or reel
 //   axis): 8 carbon blank under clear coat, 9 epoxy-coated thread wraps, 10 EVA foam grip,
-//   11 braided line on the spool, 12 machined / anodised metal, 13 knurled metal, 14 rubber
+//   11 braided line on the spool, 12 machined / anodised metal, 13 knurled metal, 14 rubber;
+//   the divers' looks (game/Look.js): 15 brush strokes of the base colour over black neoprene,
+//   16 a floral print on the base colour, 17 hair, the ends bleached
 export const PAT = {
 	plain: 0, wood: 1, cloth: 2, skin: 3, cork: 4, rusty: 5, woodX: 6, woodZ: 7,
 	carbon: 8, thread: 9, eva: 10, braid: 11, machined: 12, knurl: 13, rubber: 14,
+	strokes: 15, floral: 16, hair: 17,
 };
 
 const gameModule = new ShaderModule( {
@@ -63,7 +66,7 @@ export function createPropMaterial( name = 'gameProp', extra = {} ) {
 	let lp = in.vs.vLocal;
 	var col = base;
 	var h = 0.0;
-	if ( ( pat > 0.5 && pat < 1.5 ) || pat > 5.5 ) {
+	if ( ( pat > 0.5 && pat < 1.5 ) || ( pat > 5.5 && pat < 7.5 ) ) {
 		// weathered, sun-bleached timber: grain along the board (local y, x or z), silvery on top,
 		// dark in the cracks, grime low down
 		var q = lp.xzy;
@@ -149,11 +152,59 @@ export function createPropMaterial( name = 'gameProp', extra = {} ) {
 			let k = abs( sin( u + w ) ) * abs( sin( u - w ) );
 			col = base * ( 0.85 + k * 0.25 * aa );
 			h = k * 0.00012 * aa;
-		} else {
+		} else if ( pat < 14.5 ) {
 			// rubber: matte, a few scuffs
 			let sc = gpFbm( lp * 250.0 );
 			col = base * mix( 0.9, 1.15, sc );
 			rough = clamp( rough + ( sc - 0.5 ) * 0.2, 0.6, 1.0 );
+		} else if ( pat < 15.5 ) {
+			// a training suit: the base colour in long ragged brush strokes, slanting up the body,
+			// over black neoprene
+			let q = vec2f( lp.x * 0.5 + lp.z * 0.5 + lp.y * 0.9, lp.y * 0.35 - lp.x * 0.9 );
+			let band = gpNoise( vec3f( q.x * 9.0, q.y * 95.0, 1.7 ) );
+			let frayed = gpFbm( lp * 160.0 ) * 0.3;
+			let stroke = smoothstep( 0.66, 0.76, band + frayed - 0.12 );
+			let sc = gpFbm( lp * 250.0 );
+			col = mix( vec3f( 0.012, 0.014, 0.016 ) * mix( 0.9, 1.15, sc ), base, stroke );
+			rough = clamp( rough + ( sc - 0.5 ) * 0.2 - stroke * 0.1, 0.5, 1.0 );
+		} else if ( pat < 16.5 ) {
+			// a printed swimsuit: flowers in four colours, leaves, on the base colour; each flower
+			// in its own cell, jittered, five petals with a yellow heart
+			let q = vec2f( lp.x + lp.z * 0.6, lp.y + lp.z * 0.2 ) * 26.0;
+			var flower = 0.0; var heart = 0.0; var leaf = 0.0; var petalCol = vec3f( 0.0 );
+			let cell = floor( q );
+			for ( var i = -1; i <= 1; i ++ ) { for ( var j = -1; j <= 1; j ++ ) {
+				let c = cell + vec2f( f32( i ), f32( j ) );
+				let h1 = gpHash( vec3f( c, 1.0 ) ); let h2 = gpHash( vec3f( c, 2.0 ) ); let h3 = gpHash( vec3f( c, 3.0 ) );
+				let centre = c + 0.5 + ( vec2f( h1, h2 ) - 0.5 ) * 0.9;
+				let d = q - centre;
+				let r = length( d ); let a = atan2( d.y, d.x );
+				let R = 0.22 + 0.26 * h3;
+				let petal = R * ( 0.68 + 0.32 * cos( 5.0 * a + h1 * 6.283 ) );
+				let f = 1.0 - smoothstep( petal - 0.03, petal + 0.03, r );
+				if ( f > flower ) {
+					flower = f;
+					let k = floor( h2 * 4.0 );
+					if ( k < 1.0 ) { petalCol = vec3f( 0.62, 0.12, 0.3 ); } else if ( k < 2.0 ) { petalCol = vec3f( 0.22, 0.1, 0.55 ); } else if ( k < 3.0 ) { petalCol = vec3f( 0.1, 0.28, 0.65 ); } else { petalCol = vec3f( 0.75, 0.3, 0.42 ); }
+				}
+				heart = max( heart, 1.0 - smoothstep( R * 0.22, R * 0.3, r ) );
+				// a leaf beside each flower
+				let ld = d - vec2f( R * 1.1, R * 0.4 ) * ( h3 * 2.0 - 1.0 );
+				let le = length( ld * vec2f( 1.6, 3.2 ) );
+				leaf = max( leaf, 1.0 - smoothstep( 0.1, 0.14, le ) );
+			} }
+			col = mix( base, vec3f( 0.14, 0.36, 0.1 ), leaf * 0.9 );
+			col = mix( col, petalCol, flower );
+			col = mix( col, vec3f( 0.85, 0.65, 0.1 ), heart * flower );
+			rough = 0.5;
+		} else {
+			// hair: fine strands along the length (local y), darker at the roots, the ends
+			// sun-bleached toward a dark blonde
+			let strand = gpNoise( vec3f( lp.x * 900.0, lp.y * 30.0, lp.z * 900.0 ) );
+			let ends = smoothstep( 0.08, -0.14, lp.y );
+			col = mix( base, vec3f( 0.42, 0.27, 0.12 ), ends ) * mix( 0.7, 1.3, strand );
+			rough = clamp( rough - 0.15 + strand * 0.2, 0.3, 0.9 );
+			h = ( strand - 0.5 ) * 0.0006;
 		}
 	}
 	s.albedo = col;

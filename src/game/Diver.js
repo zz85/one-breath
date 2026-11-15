@@ -2,7 +2,7 @@ import { Group, Mesh, Vector3, Color, MathUtils } from '../engine/index.js';
 import { prepare, mergePrepared, cylinder, sphere, roundedBox, box, rod, mat4 } from '../world/boat/GeoKit.js';
 import { PAT } from './GameMaterials.js';
 import { cleanLook } from './Look.js';
-export { SUIT_COLOURS } from './Look.js';
+export { SUIT_COLOURS, LOOK_PRESETS, presetLook } from './Look.js';
 
 // A freediver: a jointed figure in a wetsuit, hood, mask, snorkel and long fins, posed in code
 // from a few numbers (the same ones the dive room sends, net/Pose.js), so your own body, the
@@ -46,16 +46,32 @@ const BLADE_L = 0.8, BLADE_N = 7; // the fin blade past the pocket, in slices
 // lifted straight up (their weight drives the body down), one long breaststroke pull of both arms
 // to the thighs, one hand to the nose to equalize, then finning.
 export const DUCK = { glide: 0.7, knife: 1.4, legs: 2.1, pull: 3.0, equalize: 3.6, end: 4.0 };
-const SUIT_BASE = { color: 0x16191c, rough: 0.55, pattern: PAT.rubber };
+const HEIGHT = 1.75; // the figure is drawn this tall; a look's height scales it
+const SUIT_PAT = { rubber: PAT.rubber, strokes: PAT.strokes, floral: PAT.floral };
 
+// a whole look from a partial one (game/Look.js): every field filled in
 export function resolveLook( look, hue = 0.55 ) {
 
 	const accent = _c.setHSL( hue, 0.75, 0.5 ).getHex();
 	const l = cleanLook( look ) || {};
-	return { suit: l.suit ?? 0x16191c, accent: l.accent ?? accent, fins: l.fins ?? l.accent ?? accent };
+	return {
+		suit: l.suit ?? 0x16191c, accent: l.accent ?? accent, fins: l.fins ?? l.accent ?? accent,
+		skin: l.skin ?? 0x9a6a4a, hands: l.hands ?? null, hair: l.hair ?? 0x1a120c,
+		pattern: l.pattern ?? 'rubber', hood: l.hood !== false, legs: l.legs !== false, height: l.height ?? HEIGHT,
+	};
 
 }
-const SKIN = { color: 0x9a6a4a, rough: 0.55, pattern: PAT.skin };
+
+// the materials of a look: the suit as printed (strokes: the accent brushed over black, so the
+// vertex colour is the accent), the skin, gloved hands, hair
+function wardrobe( L ) {
+
+	const suit = { color: L.pattern === 'strokes' ? L.accent : L.suit, rough: 0.55, pattern: SUIT_PAT[ L.pattern ] ?? PAT.rubber };
+	const skin = { color: L.skin, rough: 0.55, pattern: PAT.skin };
+	const hood = { color: L.suit, rough: 0.55, pattern: PAT.rubber }; // a hood is plain neoprene
+	return { suit, skin, hood, legs: L.legs ? suit : skin, hands: L.hands !== null ? { color: L.hands, rough: 0.7, pattern: PAT.rubber } : skin, hair: { color: L.hair, rough: 0.6, pattern: PAT.hair }, acc: { color: L.accent, rough: 0.5 } };
+
+}
 const BLACK = { color: 0x0b0d0e, rough: 0.5, pattern: PAT.rubber };
 const _c = new Color();
 const _v = new Vector3();
@@ -76,6 +92,7 @@ export class Diver {
 		this.group = new Group();
 		this.group.name = 'Diver';
 		this.tilt = new Group();
+		this.tilt.scale.setScalar( L.height / HEIGHT );
 		this.body = new Group();
 		this.group.add( this.tilt );
 		this.tilt.add( this.body );
@@ -176,13 +193,13 @@ export class Diver {
 
 	}
 
-	// new colours ({ suit, accent, fins }): each part is built again, the pose carries on
+	// a new look (game/Look.js): each part is built again in it, the pose carries on
 	setLook( look ) {
 
 		const L = resolveLook( look, this.hue );
-		const cur = this.look;
-		if ( cur && cur.suit === L.suit && cur.accent === L.accent && cur.fins === L.fins ) return;
+		if ( JSON.stringify( L ) === JSON.stringify( this.look ) ) return;
 		this.look = L;
+		this.tilt.scale.setScalar( L.height / HEIGHT );
 		for ( const part of this.parts ) {
 
 			const old = part.mesh.geometry;
@@ -508,18 +525,19 @@ function buildTorso( L ) {
 
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
-	const ACC = { color: L.accent, rough: 0.5 };
-	const SUIT = { ...SUIT_BASE, color: L.suit };
+	const { suit: SUIT, acc: ACC, skin: SKIN, hood: HOOD } = wardrobe( L );
 	// a lean swimmer's torso: hips, waist, chest, shoulders in one smooth suit; a stripe down each side
 	add( roundedBox( 0.3, 0.18, 0.19, 0.075, 2 ), { ...SUIT, matrix: mat4( 0, 0.95, 0 ) } );
 	add( roundedBox( 0.26, 0.2, 0.165, 0.07, 2 ), { ...SUIT, matrix: mat4( 0, 1.12, 0 ) } );
 	add( roundedBox( 0.33, 0.3, 0.19, 0.085, 3 ), { ...SUIT, matrix: mat4( 0, 1.32, 0 ) } );
-	for ( const s of [ - 1, 1 ] ) add( box( 0.01, 0.52, 0.05 ), { ...ACC, matrix: mat4( s * 0.155, 1.2, 0.01 ) } );
+	if ( L.pattern === 'rubber' ) for ( const s of [ - 1, 1 ] ) add( box( 0.01, 0.52, 0.05 ), { ...ACC, matrix: mat4( s * 0.155, 1.2, 0.01 ) } );
+	// a printed swimsuit zips up the front
+	if ( L.pattern === 'floral' ) add( box( 0.012, 0.42, 0.004 ), { color: 0x9a9a98, rough: 0.4, metal: 0.3, matrix: mat4( 0, 1.26, 0.097 ) } );
 	// a thin rubber weight belt, two small weights at the hips
 	add( cylinder( 0.15, 0.15, 0.028, 16, 1, true ), { ...BLACK, matrix: mat4( 0, 1.02, 0, 0, 0, 0, 1, 1, 0.62 ) } );
 	for ( const s of [ - 1, 1 ] ) add( roundedBox( 0.05, 0.035, 0.03, 0.008, 1 ), { color: 0x4a4e52, rough: 0.5, metal: 0.4, matrix: mat4( s * 0.13, 1.02, 0.03 ) } );
-	// neck (the hood)
-	add( cylinder( 0.052, 0.062, 0.08, 10 ), { ...SUIT, matrix: mat4( 0, 1.51, 0.01 ) } );
+	// the neck: in the hood, or bare
+	add( cylinder( 0.052, 0.062, 0.08, 10 ), { ...( L.hood ? HOOD : SKIN ), matrix: mat4( 0, 1.51, 0.01 ) } );
 	return mergePrepared( P );
 
 }
@@ -530,11 +548,24 @@ function buildHead( L ) {
 	const P = [];
 	const add = ( g, o ) => P.push( prepare( g, o ) );
 	const y = HEAD_Y - NECK_Y;
-	const ACC = { color: L.accent, rough: 0.5 };
-	const SUIT = { ...SUIT_BASE, color: L.suit };
-	add( sphere( 0.098, 14, 10 ), { ...SUIT, matrix: mat4( 0, y, 0, 0, 0, 0, 1, 1.12, 1.04 ) } );
-	// the face in the hood's opening
-	add( sphere( 0.078, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...SKIN, matrix: mat4( 0, y - 0.03, 0.04, Math.PI / 2, 0, 0, 0.9, 1, 1.1 ) } );
+	const { acc: ACC, skin: SKIN, hair: HAIR, hood: HOOD } = wardrobe( L );
+	if ( L.hood ) {
+
+		add( sphere( 0.098, 14, 10 ), { ...HOOD, matrix: mat4( 0, y, 0, 0, 0, 0, 1, 1.12, 1.04 ) } );
+		// the face in the hood's opening
+		add( sphere( 0.078, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...SKIN, matrix: mat4( 0, y - 0.03, 0.04, Math.PI / 2, 0, 0, 0.9, 1, 1.1 ) } );
+
+	} else {
+
+		// a bare head, the hair over it: a cap from the brow back, a curtain down the back and the
+		// sides to the shoulders, two locks framing the face (the hair pattern bleaches the ends)
+		add( sphere( 0.088, 14, 10 ), { ...SKIN, matrix: mat4( 0, y, 0.008, 0, 0, 0, 1, 1.14, 1.08 ) } );
+		add( sphere( 0.1, 14, 10, 0, Math.PI * 2, 0, Math.PI * 0.6 ), { ...HAIR, matrix: mat4( 0, y + 0.012, - 0.012, - 0.3, 0, 0, 1.04, 1.12, 1.1 ) } );
+		add( cylinder( 0.1, 0.11, 0.36, 14, 1, true, Math.PI * 0.58, Math.PI * 0.84 ), { ...HAIR, matrix: mat4( 0, y - 0.14, - 0.02, 0, 0, 0, 1, 1, 0.9 ) } );
+		for ( const s of [ - 1, 1 ] ) add( roundedBox( 0.055, 0.3, 0.028, 0.012, 2 ), { ...HAIR, matrix: mat4( s * 0.09, y - 0.12, 0.035, 0, s * 0.45, s * 0.06 ) } );
+
+	}
+
 	// low-volume mask: a slim skirt, two lenses, strap; the snorkel on the left
 	add( roundedBox( 0.15, 0.06, 0.035, 0.015, 2 ), { ...BLACK, rough: 0.35, matrix: mat4( 0, y + 0.03, 0.095 ) } );
 	for ( const s of [ - 1, 1 ] ) add( box( 0.058, 0.042, 0.006 ), { color: 0x6f8f9c, rough: 0.05, metal: 0.2, matrix: mat4( s * 0.036, y + 0.03, 0.114 ) } );
@@ -548,20 +579,20 @@ function buildHead( L ) {
 function buildUpperArm( L, s ) {
 
 	const P = [];
-	const SUIT = { ...SUIT_BASE, color: L.suit };
+	const { suit: SUIT } = wardrobe( L );
 	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( s * 0.005, - 0.01, 0 ) } ) );
 	P.push( prepare( rod( V( s * 0.01, - 0.02, 0 ), V( s * 0.015, - UPPER_ARM, 0 ), 0.042, 10, 0.035 ), SUIT ) );
 	return mergePrepared( P );
 
 }
 
-// the forearm and the bare hand from the elbow pivot
+// the forearm and the hand (bare, or gloved) from the elbow pivot
 function buildForearm( L, s ) {
 
 	const P = [];
-	const SUIT = { ...SUIT_BASE, color: L.suit };
+	const { suit: SUIT, hands: HAND } = wardrobe( L );
 	P.push( prepare( rod( V( s * 0.015, 0.02, 0 ), V( s * 0.015, - FOREARM, 0.01 ), 0.035, 10, 0.028 ), SUIT ) );
-	P.push( prepare( roundedBox( 0.07, 0.17, 0.022, 0.01, 2 ), { ...SKIN, matrix: mat4( s * 0.015, - FOREARM - 0.085, 0.012, 0.1, 0, 0 ) } ) );
+	P.push( prepare( roundedBox( 0.07, 0.17, 0.022, 0.01, 2 ), { ...HAND, matrix: mat4( s * 0.015, - FOREARM - 0.085, 0.012, 0.1, 0, 0 ) } ) );
 	return mergePrepared( P );
 
 }
@@ -569,9 +600,11 @@ function buildForearm( L, s ) {
 function buildThigh( L ) {
 
 	const P = [];
-	const SUIT = { ...SUIT_BASE, color: L.suit };
+	const { suit: SUIT, legs: LEG } = wardrobe( L );
+	// the suit's leg, or the swimsuit's hem over a bare thigh
 	P.push( prepare( sphere( 0.066, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.02, 0 ) } ) );
-	P.push( prepare( rod( V( 0, - 0.02, 0 ), V( 0, - THIGH, 0.0 ), 0.064, 10, 0.05 ), SUIT ) );
+	if ( ! L.legs ) P.push( prepare( rod( V( 0, - 0.02, 0 ), V( 0, - 0.1, 0 ), 0.065, 10, 0.062 ), SUIT ) );
+	P.push( prepare( rod( V( 0, L.legs ? - 0.02 : - 0.09, 0 ), V( 0, - THIGH, 0.0 ), L.legs ? 0.064 : 0.061, 10, 0.05 ), LEG ) );
 	return mergePrepared( P );
 
 }
@@ -580,17 +613,17 @@ function buildThigh( L ) {
 function buildShin( L ) {
 
 	const P = [];
-	const SUIT = { ...SUIT_BASE, color: L.suit };
-	P.push( prepare( sphere( 0.05, 10, 8 ), { ...SUIT, matrix: mat4( 0, - 0.01, 0 ) } ) );
-	P.push( prepare( rod( V( 0, - 0.01, 0 ), V( 0, - SHIN, - 0.01 ), 0.048, 10, 0.038 ), SUIT ) );
+	const { legs: LEG } = wardrobe( L );
+	P.push( prepare( sphere( 0.05, 10, 8 ), { ...LEG, matrix: mat4( 0, - 0.01, 0 ) } ) );
+	P.push( prepare( rod( V( 0, - 0.01, 0 ), V( 0, - SHIN, - 0.01 ), 0.048, 10, 0.038 ), LEG ) );
 	return mergePrepared( P );
 
 }
 
 // the bare foot from the ankle pivot: heel at the pivot, toes toward +Z (on land)
-function buildFoot() {
+function buildFoot( L ) {
 
-	return mergePrepared( [ prepare( roundedBox( 0.08, 0.055, FOOT_L, 0.022, 2 ), { ...SKIN, matrix: mat4( 0, - 0.03, FOOT_L / 2 - 0.03 ) } ) ] );
+	return mergePrepared( [ prepare( roundedBox( 0.08, 0.055, FOOT_L, 0.022, 2 ), { ...wardrobe( L ).skin, matrix: mat4( 0, - 0.03, FOOT_L / 2 - 0.03 ) } ) ] );
 
 }
 
