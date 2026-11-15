@@ -3,6 +3,7 @@
 //   node test/net-pose.mjs
 import { encodePose, decodePose, PoseBuffer, POSE_LEN, hueOf, makeDiveCode, cleanDiveCode, cleanName, cleanChat, cleanGear, cleanShot } from '../src/net/Pose.js';
 import { DiveRoom } from '../src/net/DiveRoom.js';
+import { Voice } from '../src/net/Voice.js';
 import { RemoteDivers } from '../src/game/RemoteDivers.js';
 import { Group, Vector3 } from '../src/engine/index.js';
 
@@ -118,6 +119,11 @@ function fakeJoin() {
 
 		},
 		onUserJoin( cb ) { joinCb = cb; },
+		onPeerJoin( cb ) { room._peerJoin = cb; },
+		onPeerStream( cb ) { room._stream = cb; },
+		added: [], removed: [],
+		addStream: async ( st, opt ) => { room.added.push( { st, target: opt && opt.target } ); },
+		removeStream( st ) { room.removed.push( st ); },
 		onUserLeave( cb ) { leaveCb = cb; },
 		leave: async () => {},
 		// test hooks
@@ -182,6 +188,18 @@ room.actions.shot.handler( { p: 'x' }, { userId: 'u9' } );
 check( shotsHeard.length === 1 && shotsHeard[ 0 ].v === 17, 'a shot from another diver comes through; junk doesn\'t' );
 net.shoot( new Vector3( 1, - 2, 3 ), new Vector3( 0, 0, - 1 ), 18.12345 );
 check( room.actions.shot.sent[ 0 ].v === 18.123 && room.actions.shot.sent[ 0 ].d[ 2 ] === - 1, 'your shot goes out' );
+// voice: your mic goes to everyone in the room, and to each one who joins later; theirs comes to you
+const mic = { getAudioTracks: () => [ {} ], getTracks: () => [] };
+await net.setVoice( mic );
+check( room.added.length === 1 && room.added[ 0 ].st === mic && ! room.added[ 0 ].target, 'your mic goes to everyone in the dive' );
+room._peerJoin( { peerId: 'p7', userId: 'u7' } );
+check( room.added.length === 2 && room.added[ 1 ].target === 'p7', 'and to a diver who joins later' );
+const heardV = [];
+net.onVoice( ( id, st ) => heardV.push( id ) );
+room._stream( mic, { userId: 'u9', peerId: 'p9' } );
+room._stream( { getAudioTracks: () => [] }, { userId: 'u9' } );
+check( heardV.length === 1 && heardV[ 0 ] === 'u9', 'their voice comes to you (a stream with no sound doesn\'t)' );
+check( decodePose( encodePose( { ...pose, talking: true } ) ).talking && ! decodePose( encodePose( pose ) ).talking, 'talking or not goes in the pose' );
 room._go( 'u9' );
 check( net.hostId === null, 'the host leaves: nobody hosts' );
 room._go( 'u1' );
@@ -193,6 +211,40 @@ await new Promise( ( r ) => setTimeout( r, 0 ) );
 check( hostNet.isHost && hostNet.people().me.host && hostNet.people().me.look.accent === 0xffd21f, 'the maker of the dive hosts it, in a yellow trim' );
 hostNet.setWorld( { time: 9 } );
 check( h.room.stateSent && h.room.stateSent.time === 9, 'the host sends time and weather' );
+
+// ---- push-to-talk, with a stand-in for the browser's mic
+{
+
+	const track = { enabled: true, stop() { this.stopped = true; } };
+	let asks = 0, sentTo = null;
+	const v = new Voice( { getUserMedia: async () => { asks ++; return { getAudioTracks: () => [ track ], getTracks: () => [ track ] }; } } );
+	v.attach( { setVoice: async ( st ) => { sentTo = st; } } );
+	check( v.mic === 'off' && ! v.talking, 'push-to-talk: the mic is off until you first press' );
+	await v.press();
+	check( asks === 1 && v.mic === 'on' && v.talking && track.enabled && sentTo, 'the first press asks for the mic, sends it to the dive and talks' );
+	v.release();
+	check( ! v.talking && ! track.enabled, 'let go: silent (the track is off, still connected)' );
+	await v.press();
+	check( asks === 1 && track.enabled && v.talking, 'the next press talks at once, with no new ask' );
+	v.release();
+	// let go before the browser's prompt is answered: on for next time, quiet now
+	let answer;
+	const v2 = new Voice( { getUserMedia: () => new Promise( ( r ) => { answer = r; } ) } );
+	const pr = v2.press();
+	v2.release();
+	answer( { getAudioTracks: () => [ track ], getTracks: () => [ track ] } );
+	await pr;
+	check( v2.mic === 'on' && ! v2.talking && ! track.enabled, 'let go while the browser asks: the mic is on, and silent' );
+	const v3 = new Voice( { getUserMedia: async () => { throw Object.assign( new Error( 'no' ), { name: 'NotAllowedError' } ); } } );
+	await v3.press();
+	check( v3.mic === 'denied' && ! v3.talking, 'the mic refused: "blocked", nothing sent' );
+	const v4 = new Voice( { getUserMedia: async () => { throw Object.assign( new Error( 'no' ), { name: 'NotFoundError' } ); } } );
+	await v4.press();
+	check( v4.mic === 'none', 'no mic on the device: "none"' );
+	v.stop();
+	check( track.stopped && v.mic === 'off', 'leaving the dive turns the mic off (its light goes out)' );
+
+}
 
 // ---- drawing a remote diver from a pose
 const scene = new Group();

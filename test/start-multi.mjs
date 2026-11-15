@@ -4,7 +4,11 @@
 // Needs the dev server (npm run dev).   node test/start-multi.mjs [playwright-core dir]
 import { createRequire } from 'node:module';
 const require = createRequire( import.meta.url );
-const pw = require( process.argv[ 2 ] || '/tmp/pw2/node_modules/playwright-core' );
+// playwright-core: the argument, $PLAYWRIGHT, or a copy installed in one of the usual places
+import { existsSync, readdirSync } from 'node:fs';
+const pwDir = process.argv[ 2 ] || process.env.PLAYWRIGHT || [ 'node_modules/playwright-core', ...readdirSync( '/tmp' ).map( ( d ) => `/tmp/${ d }/node_modules/playwright-core` ) ].find( ( d ) => existsSync( d ) );
+if ( ! pwDir ) throw new Error( 'playwright-core not found: npm i -D playwright-core, or pass its directory' );
+const pw = require( pwDir.startsWith( '/' ) ? pwDir : process.cwd() + '/' + pwDir );
 const base = ( process.env.BASE || 'http://127.0.0.1:5189' ) + '/test/start.html';
 const browser = await pw.chromium.launch( { args: [ '--no-sandbox' ], executablePath: process.env.CHROME || ( process.env.HOME + '/.cache/ms-playwright/chromium-1194/chrome-linux/chrome' ) } );
 let fails = 0;

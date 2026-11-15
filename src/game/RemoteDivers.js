@@ -18,6 +18,11 @@ const TAG_CSS = /* css */`
 	font: 600 var(--tw-fs-sm, 12px) var(--tw-font, sans-serif); color: #fff; text-shadow: 0 1px 2px rgba(0,0,0,0.6); }
 .nt::before { content: ''; display: inline-block; width: 0.6em; height: 0.6em; border-radius: 50%; margin-right: 0.4em; background: var(--nt-c); vertical-align: 0.05em; }
 .nt.is-away { opacity: 0.45 !important; font-style: italic; }
+.nt.is-talking { box-shadow: 0 0 0 2px var(--nt-c), 0 0 12px var(--nt-c); }
+.nt.is-talking::after { content: ''; display: inline-block; width: 0.5em; height: 0.75em; margin-left: 0.45em; vertical-align: -0.05em;
+	background: linear-gradient(var(--nt-c), var(--nt-c)) 0 50% / 2px 60% no-repeat, linear-gradient(var(--nt-c), var(--nt-c)) 50% 50% / 2px 100% no-repeat, linear-gradient(var(--nt-c), var(--nt-c)) 100% 50% / 2px 40% no-repeat;
+	animation: nt-talk 0.6s ease-in-out infinite alternate; }
+@keyframes nt-talk { from { transform: scaleY(0.6); } to { transform: scaleY(1.1); } }
 .tw-root.is-photo .nt-layer { display: none; }
 `;
 
@@ -147,6 +152,7 @@ export class RemoteDivers {
 			if ( ! d.tag ) continue;
 			const away = d.buffer.age( now ) > 3;
 			d.tag.classList.toggle( 'is-away', away );
+			d.tag.classList.toggle( 'is-talking', ! away && !! d.pose.talking );
 			const g = d.group;
 			if ( ! g.visible || ! camera ) {
 

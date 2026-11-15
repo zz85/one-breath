@@ -3,8 +3,9 @@ import { personColour } from '../game/Look.js';
 
 // The dive-with-friends panel, under the brand at the top left (game/NetPlay.js drives it):
 //   not in a room   "Dive with friends": makes a room and copies its invite link; Suit
-//   in a room       who's in the water, Invite (copy the link again), Suit, World (the host: time
-//                   of day and weather for everyone), Leave, and the chat
+//   in a room       who's in the water, Invite (copy the link again), Talk (hold: push-to-talk, or
+//                   B), Voices (hear the others or not), Suit, World (the host: time of day and
+//                   weather for everyone), Leave, and the chat
 // Enter opens the chat box (the pointer is let go while you type), Enter sends, Esc closes.
 // On a phone, the Chat button opens it. Chat lines fade after a while; with the box open the
 // last ones show again.
@@ -46,6 +47,13 @@ const CSS = /* css */`
 .nu-wx { display: flex; gap: var(--tw-1); flex-wrap: wrap; }
 .nu-wx .nu-btn[aria-pressed="true"] { background: rgba(var(--tw-aqua-rgb, 95, 227, 212), 0.45) !important; }
 .nu-world { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); padding: 0 var(--tw-2); }
+.nu-btn.is-talk { touch-action: none; user-select: none; -webkit-user-select: none; }
+.nu-btn.is-talk.is-on { background: rgba(255, 92, 92, 0.75) !important; }
+.nu-btn.is-talk.is-asking { opacity: 0.6; }
+.nu-btn.is-off { color: var(--tw-ink-3) !important; text-decoration: line-through; }
+.nu-people span.is-talking { color: var(--tw-ink); }
+.nu-people span.is-talking::before { box-shadow: 0 0 0 2px var(--nu-c), 0 0 8px var(--nu-c); animation: nu-talk 0.5s ease-in-out infinite alternate; }
+@keyframes nu-talk { from { transform: scale(0.8); } to { transform: scale(1.3); } }
 .nu-hint { font-size: var(--tw-fs-sm); color: var(--tw-ink-3); padding: 0 var(--tw-2); }
 .tw-root:not(.is-locked) .nu-hint-locked { display: none; }
 `;
@@ -80,9 +88,45 @@ export class NetUI {
 		this.inviteBtn = this.button( 'Invite', () => this.net.copyLink() );
 		this.chatBtn = this.button( 'Chat', () => this.open() );
 		this.leaveBtn = this.button( 'Leave', () => this.net.leave() );
+		// push-to-talk: held down on the button (mouse or finger), or B on the keyboard
+		this.talkBtn = this.button( 'Talk', () => {}, 'is-talk' );
+		this.talkBtn.title = 'Hold to talk (or hold B)';
+		const down = ( e ) => {
+
+			e.preventDefault();
+			e.stopPropagation();
+			try {
+
+				this.talkBtn.setPointerCapture( e.pointerId );
+
+			} catch ( err ) { /* no capture */ }
+
+			this.net.voice.press();
+
+		};
+		const up = ( e ) => {
+
+			e.stopPropagation();
+			this.net.voice.release();
+
+		};
+		this.talkBtn.addEventListener( 'pointerdown', down );
+		this.talkBtn.addEventListener( 'pointerup', up );
+		this.talkBtn.addEventListener( 'pointercancel', up );
+		this.talkBtn.addEventListener( 'contextmenu', ( e ) => e.preventDefault() );
+		this.hearBtn = this.button( 'Voices', () => {
+
+			const v = this.net.voice;
+			v.muted = ! v.muted;
+			this.hearBtn.classList.toggle( 'is-off', v.muted );
+			this.hearBtn.title = v.muted ? 'You don\'t hear the others: click to hear them' : 'You hear the others: click to mute them';
+			this.system( v.muted ? 'Voices muted' : 'Voices on' );
+
+		} );
+		this.hearBtn.title = 'You hear the others: click to mute them';
 		this.suitBtn = this.button( 'Suit', () => this.pop( 'suit' ) );
 		this.worldBtn = this.button( 'World', () => this.pop( 'world' ) );
-		this.bar.append( this.mainBtn, this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.suitBtn, this.worldBtn, this.leaveBtn );
+		this.bar.append( this.mainBtn, this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.talkBtn, this.hearBtn, this.suitBtn, this.worldBtn, this.leaveBtn );
 		this.peopleEl = el( 'div', 'nu-people' );
 		this.worldEl = el( 'div', 'nu-world' );
 		// the popovers: your suit colours; the host's time and weather
@@ -95,7 +139,7 @@ export class NetUI {
 		this.worldPop.hidden = true;
 		this.log = el( 'div', 'nu-log' );
 		this.hint = el( 'div', 'nu-hint' );
-		this.hint.innerHTML = '<span class="nu-hint-locked">Enter: chat · Esc: use the mouse, then click your name to change it</span>';
+		this.hint.innerHTML = '<span class="nu-hint-locked">Hold B: talk · Enter: chat · Esc: use the mouse, then click your name to change it</span>';
 		this.input = el( 'input', 'nu-input' );
 		this.input.type = 'text';
 		this.input.maxLength = 200;
@@ -110,7 +154,12 @@ export class NetUI {
 				if ( t.trim() ) this.net.say( t );
 				this.close( true );
 
-			} else if ( e.key === 'Escape' ) this.close( false );
+			} else if ( e.key === 'Escape' ) {
+
+				this.input.value = ''; // Esc drops what you typed
+				this.close( false );
+
+			}
 
 		} );
 		this.input.addEventListener( 'blur', () => this.close( false, true ) );
@@ -243,7 +292,7 @@ export class NetUI {
 		this.mainBtn.hidden = !! code;
 		this.mainBtn.textContent = joining ? 'Joining the dive...' : 'Dive with friends';
 		this.mainBtn.disabled = !! joining;
-		for ( const b of [ this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.leaveBtn ] ) b.hidden = ! code;
+		for ( const b of [ this.count, this.codeEl, this.inviteBtn, this.chatBtn, this.talkBtn, this.hearBtn, this.leaveBtn ] ) b.hidden = ! code;
 		// the host sets the time and weather; the others are told who does
 		const host = this.net.isHost;
 		this.worldBtn.hidden = ! code || ! host;
@@ -274,6 +323,7 @@ export class NetUI {
 
 			const p = people[ id ];
 			const s = el( 'span', p.self ? 'is-self is-me' : '', p.self ? `${ p.name } (you)` : p.name );
+			s.dataset.id = id;
 			if ( p.self ) {
 
 				s.title = 'Change your name';
@@ -403,7 +453,24 @@ export class NetUI {
 
 	}
 
+	// the Talk button: red while you talk, dim while the browser asks for the mic
+	voiceState( { talking, mic } ) {
+
+		this.talkBtn.classList.toggle( 'is-on', talking );
+		this.talkBtn.classList.toggle( 'is-asking', mic === 'asking' );
+		this.talkBtn.textContent = talking ? 'Talking' : mic === 'denied' ? 'Talk (mic blocked)' : mic === 'none' ? 'No mic' : 'Talk';
+
+	}
+
 	update() {
+
+		// who is talking: a pulsing dot by their name
+		if ( this.inRoom ) {
+
+			const on = this.net.talking();
+			for ( const sp of this.peopleEl.children ) if ( sp.dataset.id ) sp.classList.toggle( 'is-talking', on.has( sp.dataset.id ) );
+
+		}
 
 		const now = performance.now();
 		for ( const l of this.lines ) l.classList.toggle( 'is-old', now - l._t > FADE_MS );

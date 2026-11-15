@@ -2183,6 +2183,11 @@ export class UI {
 						${ row( k( 'F1' ) + k( '?' ), 'This sheet' ) }
 						${ row( k( 'Esc' ), 'Release the mouse' ) }
 					</section>
+					<section>
+						<h3>Diving with friends</h3>
+						${ row( k( 'B' ), 'Push to talk<small>Hold: everyone in the dive hears you</small>' ) }
+						${ row( k( 'Enter' ), 'Chat' ) }
+					</section>
 				</div>
 				<div class="tw-help-guide">
 					<span><b>How to play:</b> catch fish, sell them to Joe at the fish stand by the pier, and buy upgrades from Marta at the chandlery by the boathouse. Both are on the map (lower right).</span>

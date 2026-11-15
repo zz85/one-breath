@@ -3,6 +3,7 @@ import { DiveRoom, MAX_DIVERS } from '../net/DiveRoom.js';
 import { RemoteDivers } from './RemoteDivers.js';
 import { NetUI } from '../ui/NetUI.js';
 import { myLook, saveLook, cleanLook, personColour } from './Look.js';
+import { Voice, PTT_KEY } from '../net/Voice.js';
 
 // Diving with friends: an invite link (?dive=<code>) puts everyone who opens it in one
 // peer-to-peer room (net/DiveRoom.js). Each player sends their own pose ~12 times a second,
@@ -46,6 +47,33 @@ export class NetPlay {
 		this._lifeT = 0;
 		this._whaleT = 0;
 		this._wasGuest = false;
+		// push-to-talk (net/Voice.js): hold B, or the Talk button
+		this.voice = new Voice( { onState: ( st ) => this._voiceState( st ) } );
+		this._mic = this.voice.mic;
+		if ( typeof window !== 'undefined' ) {
+
+			window.addEventListener( 'keydown', ( e ) => {
+
+				if ( e.code !== PTT_KEY || e.repeat || ! this.room ) return;
+				const t = e.target;
+				if ( t && ( t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable ) ) return;
+				if ( this.ui && this.ui.typing ) return;
+				this.voice.press();
+
+			} );
+			window.addEventListener( 'keyup', ( e ) => {
+
+				if ( e.code === PTT_KEY ) this.voice.release();
+
+			} );
+			window.addEventListener( 'blur', () => this.voice.release() );
+			document.addEventListener( 'visibilitychange', () => {
+
+				if ( document.hidden ) this.voice.release();
+
+			} );
+
+		}
 		this._worldT = 0;
 		this._worldSent = null;
 		this._worldSentAt = - Infinity;
@@ -167,6 +195,9 @@ export class NetPlay {
 		// the host's time and weather (never your own: the host's own writes don't come back)
 		room.onWorld( ( c ) => this.applyWorld( c ) );
 		room.onShot( ( id, shot ) => this.divers && this.divers.shot( id, shot ) );
+		// voices: everyone's mic plays here; ours goes to them once it's on
+		room.onVoice( ( id, stream ) => this.voice.hear( id, stream ) );
+		this.voice.attach( room );
 		// the host's animals (a guest's game pulls its own toward them); a guest hit the host's whale
 		room.onLife( ( fish, whale, t ) => this.applyLife( fish, whale, t ) );
 		room.onLifeEvent( ( id, ev ) => {
@@ -197,6 +228,7 @@ export class NetPlay {
 		this.code = null;
 		this.people = {};
 		if ( this.divers ) this.divers.clear();
+		this.voice.stop(); // the mic off: the browser's mic light goes out
 		const u = new URL( location.href );
 		u.searchParams.delete( 'dive' );
 		history.replaceState( null, '', u.toString() );
@@ -212,6 +244,7 @@ export class NetPlay {
 		if ( this.divers ) this.divers.setPeople( people );
 		if ( ! this.ui ) return;
 		for ( const id in people ) if ( ! before[ id ] && ! people[ id ].self && Object.keys( before ).length ) this.ui.system( `${ people[ id ].name } is in the water` );
+		for ( const id in before ) if ( ! people[ id ] ) this.voice.forget( id );
 		for ( const id in before ) if ( ! people[ id ] && ! before[ id ].self ) this.ui.system( `${ before[ id ].name } left` );
 		for ( const id in people ) if ( before[ id ] && ! people[ id ].self && before[ id ].name !== people[ id ].name ) this.ui.system( `${ before[ id ].name } is now ${ people[ id ].name }` );
 		const host = Object.keys( people ).find( ( id ) => people[ id ].host && ! people[ id ].self );
@@ -282,6 +315,29 @@ export class NetPlay {
 		}
 
 		this.room.sendLife( fish, whale, now );
+
+	}
+
+	// the mic's state changed: say so once (asked, on, blocked, none), and show who talks
+	_voiceState( st ) {
+
+		if ( this.ui ) this.ui.voiceState( st );
+		if ( st.mic === this._mic ) return;
+		this._mic = st.mic;
+		if ( ! this.ui ) return;
+		if ( st.mic === 'on' ) this.ui.system( 'Mic on. Hold B (or Talk) to talk: everyone in the dive hears you.' );
+		else if ( st.mic === 'denied' ) this.ui.system( 'The microphone is blocked. Allow it for this site in the browser (the icon in the address bar), then press B again.' );
+		else if ( st.mic === 'none' ) this.ui.system( 'No microphone found on this device.' );
+
+	}
+
+	// who is talking now: you, and the others by their poses
+	talking() {
+
+		const out = new Set();
+		if ( this.voice.talking && this.room ) out.add( this.room.selfId );
+		if ( this.divers ) for ( const [ id, d ] of this.divers.divers ) if ( d.pose && d.pose.talking && d.buffer.age( this.now ) < 1.5 ) out.add( id );
+		return out;
 
 	}
 
@@ -437,6 +493,7 @@ export class NetPlay {
 		o.aim = !! ( sp && sp.equipped && sp.aiming );
 		o.loaded = sp && sp.gun ? sp.gun.bandsLoaded : 0;
 		o.shaftOut = !! ( sp && sp.gun && ! sp.gun.shaftHome );
+		o.talking = this.voice.talking;
 		o.duck = p.duck !== null && p.duck !== undefined;
 		o.speed = Math.hypot( p.velocity.x, p.velocity.y, p.velocity.z );
 		o.depth = Math.max( 0, ( p.waterH || 0 ) - p.position.y );

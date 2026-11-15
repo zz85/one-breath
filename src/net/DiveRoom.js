@@ -14,6 +14,8 @@
 //   net.shoot( p, d, v ); net.onShot( ( userId, shot ) => ... )   // a shot, for the others to see
 //   net.sendLife( fish, whale ); net.onLife( ( fish, whale, sentAt ) => ... )   // the host's animals
 //   net.lifeEvent( ev ); net.onLifeEvent( ( userId, ev ) => ... )    // to the host: a guest hit its whale
+//   net.setVoice( micStream ); net.onVoice( ( userId, stream ) => ... )  // the mic to everyone, and theirs
+//                                              // (talking or not is the pose's flag; the track is muted between)
 //   net.leave()
 //
 // The host is the player who made the dive (DiveRoom.join with host: true; their browser
@@ -50,7 +52,7 @@ export class DiveRoom {
 		this.hostId = null;
 		this.selfId = null;
 		this.error = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [], voice: [] };
 		this._chatTimes = new Map();
 		this._names = {};
 		this.room = join( {
@@ -87,6 +89,17 @@ export class DiveRoom {
 
 		}, { replay: true } );
 		room.onUserJoin( () => this._emitPeople() );
+		// voice: everyone's mic stream as it arrives; ours to each peer that joins after we turned it on
+		room.onPeerStream( ( stream, { userId } ) => {
+
+			if ( userId !== this.selfId && stream && stream.getAudioTracks && stream.getAudioTracks().length ) this._emit( 'voice', userId, stream );
+
+		} );
+		room.onPeerJoin( ( { peerId } ) => {
+
+			if ( this._voice ) room.addStream( this._voice, { target: peerId } ).catch( () => {} );
+
+		} );
 		room.onUserLeave( ( { userId } ) => {
 
 			this._chatTimes.delete( userId );
@@ -237,6 +250,16 @@ export class DiveRoom {
 
 	}
 
+	// your mic (a MediaStream with one audio track) to everyone in the room, now and as they join
+	async setVoice( stream ) {
+
+		if ( this._voice === stream || ! this.room ) return;
+		if ( this._voice ) this.room.removeStream( this._voice );
+		this._voice = stream || null;
+		if ( stream ) await this.room.addStream( stream ).catch( () => {} );
+
+	}
+
 	setLook( look ) {
 
 		const l = cleanLook( look );
@@ -306,7 +329,7 @@ export class DiveRoom {
 
 		const room = this.room;
 		this.room = null;
-		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [] };
+		this._handlers = { pose: [], chat: [], people: [], error: [], world: [], shot: [], life: [], lifeEvent: [], voice: [] };
 		if ( room ) await room.leave();
 
 	}
@@ -319,6 +342,7 @@ export class DiveRoom {
 	onShot( fn ) { this._handlers.shot.push( fn ); }
 	onLife( fn ) { this._handlers.life.push( fn ); }
 	onLifeEvent( fn ) { this._handlers.lifeEvent.push( fn ); }
+	onVoice( fn ) { this._handlers.voice.push( fn ); }
 
 	_emitPeople() {
 

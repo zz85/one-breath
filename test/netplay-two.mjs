@@ -5,15 +5,19 @@
 //   node test/netplay-two.mjs [playwright-core dir]
 import { createRequire } from 'node:module';
 const require = createRequire( import.meta.url );
-const pw = require( process.argv[ 2 ] || '/tmp/pw2/node_modules/playwright-core' );
+// playwright-core: the argument, $PLAYWRIGHT, or a copy installed in one of the usual places
+import { existsSync, readdirSync } from 'node:fs';
+const pwDir = process.argv[ 2 ] || process.env.PLAYWRIGHT || [ 'node_modules/playwright-core', ...readdirSync( '/tmp' ).map( ( d ) => `/tmp/${ d }/node_modules/playwright-core` ) ].find( ( d ) => existsSync( d ) );
+if ( ! pwDir ) throw new Error( 'playwright-core not found: npm i -D playwright-core, or pass its directory' );
+const pw = require( pwDir.startsWith( '/' ) ? pwDir : process.cwd() + '/' + pwDir );
 const base = process.env.BASE || 'http://127.0.0.1:5189';
-const browser = await pw.chromium.launch( { args: [ '--no-sandbox' ], executablePath: process.env.CHROME || ( process.env.HOME + '/.cache/ms-playwright/chromium-1194/chrome-linux/chrome' ) } );
+const browser = await pw.chromium.launch( { args: [ '--no-sandbox', '--use-fake-ui-for-media-stream', '--use-fake-device-for-media-stream', '--autoplay-policy=no-user-gesture-required' ], executablePath: process.env.CHROME || ( process.env.HOME + '/.cache/ms-playwright/chromium-1194/chrome-linux/chrome' ) } );
 let fails = 0;
 const check = ( ok, what ) => { console.log( ( ok ? 'ok   ' : 'FAIL ' ) + what ); if ( ! ok ) fails ++; };
 const wait = async ( page, fn, ms = 30000 ) => { try { await page.waitForFunction( fn, null, { timeout: ms } ); return true; } catch { return false; } };
 const open = async ( url, name ) => {
 
-	const ctx = await browser.newContext( { viewport: { width: 1280, height: 720 }, permissions: [ 'clipboard-read', 'clipboard-write' ] } );
+	const ctx = await browser.newContext( { viewport: { width: 1280, height: 720 }, permissions: [ 'clipboard-read', 'clipboard-write', 'microphone' ] } );
 	await ctx.addInitScript( ( n ) => localStorage.setItem( 'onebreath.name', n ), name );
 	const page = await ctx.newPage();
 	page.on( 'pageerror', ( e ) => console.log( name, 'error:', e.message ) );
@@ -62,6 +66,67 @@ check( await ben.evaluate( () => Array.isArray( window.__life.others ) ) && awai
 // Ben spears Ana's whale: hers sounds
 await ben.evaluate( () => window.__game.spear.onWhaleStartle( - 1 ) );
 check( await wait( ana, () => window.__life.startled[ 0 ] === - 1, 8000 ), 'Ben hits the whale: on Ana\'s side it startles and sounds' );
+
+// push-to-talk: Ben holds B; his (fake: a tone) mic reaches Ana, loud while he holds it, silent after
+const level = ( page ) => page.evaluate( async () => {
+
+	const a = document.querySelector( 'audio[data-voice]' );
+	if ( ! a || ! a.srcObject ) return null;
+	const ctx = window.__vctx || ( window.__vctx = new AudioContext() );
+	if ( ! window.__van ) {
+
+		window.__van = ctx.createAnalyser();
+		ctx.createMediaStreamSource( a.srcObject ).connect( window.__van );
+
+	}
+
+	await ctx.resume();
+	const buf = new Float32Array( 2048 );
+	let peak = 0;
+	for ( let k = 0; k < 10; k ++ ) {
+
+		await new Promise( ( r ) => setTimeout( r, 50 ) );
+		window.__van.getFloatTimeDomainData( buf );
+		for ( const x of buf ) peak = Math.max( peak, Math.abs( x ) );
+
+	}
+
+	return peak;
+
+} );
+await ben.mouse.click( 900, 600 ); // focus the page (not a text box)
+await ben.keyboard.down( 'b' );
+check( await wait( ben, () => window.__np.voice.mic === 'on' && window.__np.voice.talking, 8000 ), 'Ben holds B: his mic comes on and he talks' );
+check( await ben.evaluate( () => document.querySelector( '.nu-btn.is-talk' ).classList.contains( 'is-on' ) ), 'his Talk button shows it' );
+check( await wait( ana, () => { const a = document.querySelector( 'audio[data-voice]' ); return a && a.srcObject && a.srcObject.getAudioTracks().length > 0; }, 15000 ), 'Ana gets his voice' );
+check( await wait( ana, () => document.querySelector( '.nt' )?.classList.contains( 'is-talking' ) && document.querySelector( '.nu-people span:not(.is-me).is-talking' ), 5000 ), 'his name tag and his name in the list show he\'s talking' );
+let loud = 0;
+for ( let k = 0; k < 10 && loud < 0.02; k ++ ) loud = await level( ana );
+check( loud > 0.02, `she hears him (peak ${ loud.toFixed( 3 ) })` );
+await ana.screenshot( { path: '/tmp/netplay-talk.png', clip: { x: 0, y: 0, width: 720, height: 420 } } );
+await ben.keyboard.up( 'b' );
+check( await wait( ben, () => ! window.__np.voice.talking && window.__np.voice.stream.getAudioTracks()[ 0 ].enabled === false, 3000 ), 'he lets go: his mic is silent' );
+check( await wait( ana, () => ! document.querySelector( '.nt' )?.classList.contains( 'is-talking' ), 5000 ), 'and his mark goes' );
+let quiet = 1;
+for ( let k = 0; k < 10 && quiet > 0.005; k ++ ) quiet = await level( ana );
+check( quiet < 0.005, `Ana hears nothing from him now (peak ${ quiet.toFixed( 4 ) })` );
+// Ana talks with the button (a phone has no B); Ben mutes the voices
+await ben.getByRole( 'button', { name: 'Voices' } ).click();
+const tb = await ana.$( '.nu-btn.is-talk' );
+const box = await tb.boundingBox();
+await ana.mouse.move( box.x + box.width / 2, box.y + box.height / 2 );
+await ana.mouse.down();
+check( await wait( ana, () => window.__np.voice.talking, 8000 ), 'Ana holds the Talk button: she talks' );
+check( await wait( ben, () => { const a = document.querySelector( 'audio[data-voice]' ); return a && a.muted; }, 15000 ), 'Ben has muted the voices: hers plays muted' );
+await ana.mouse.up();
+check( await wait( ana, () => ! window.__np.voice.talking, 3000 ), 'she lets go: silent' );
+await ben.getByRole( 'button', { name: 'Voices' } ).click();
+check( await ben.evaluate( () => ! document.querySelector( 'audio[data-voice]' ).muted ), 'Ben turns the voices back on' );
+// a B typed in the chat box isn't push-to-talk
+await ben.keyboard.press( 'Enter' );
+await ben.keyboard.type( 'bob' );
+check( await ben.evaluate( () => ! window.__np.voice.talking ), 'typing a b in the chat doesn\'t talk' );
+await ben.keyboard.press( 'Escape' );
 
 // Ben's suit: Suit opens the picker, a swatch changes it for him and for Ana
 await ben.getByRole( 'button', { name: 'Suit' } ).click();
@@ -113,6 +178,7 @@ check( await ana.evaluate( () => document.querySelector( '.nu-people .is-me' )?.
 await ana.screenshot( { path: '/tmp/netplay-ana.png' } );
 await ben.screenshot( { path: '/tmp/netplay-ben.png' } );
 await ben.getByRole( 'button', { name: 'Leave' } ).click();
+check( await ben.evaluate( () => window.__np.voice.stream === null && window.__np.voice.mic === 'off' ), 'Ben leaves: his mic is off' );
 check( await wait( ana, () => document.querySelector( '.nu-count b' )?.textContent === '1' && ! document.querySelector( '.nt' ), 15000 ), 'Ben leaves: Ana is alone again and his diver is gone' );
 check( await ben.evaluate( () => ! /dive=/.test( location.href ) && ! document.querySelector( '.nu-btn.is-main' ).hidden ), 'Ben\'s link is gone and he can make a new dive' );
 await browser.close();
