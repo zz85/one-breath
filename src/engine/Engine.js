@@ -85,12 +85,35 @@ export class Engine {
 			let dt = this.clock.getDelta();
 			if ( dt > 0.1 ) dt = 0.1;
 			this.frame ++;
-			update( dt, this.clock.getElapsed() );
+			// the next frame is asked for first: an error in one frame's update is logged, and the
+			// game goes on, where it would otherwise stop dead (no frame asked for after a throw)
 			this._raf = requestAnimationFrame( loop );
+			try {
+
+				update( dt, this.clock.getElapsed() );
+
+			} catch ( e ) {
+
+				this.reportError( e );
+
+			}
 
 		};
 
 		this._raf = requestAnimationFrame( loop );
+
+	}
+
+	// an error a frame threw: logged in full the first time, counted after (60 a second would bury
+	// the console). frameErrors keeps the count, by message, for the debug overlay and tests.
+	reportError( e ) {
+
+		const key = String( e && e.stack || e ).split( '\n' ).slice( 0, 2 ).join( '\n' );
+		const seen = this.frameErrors || ( this.frameErrors = new Map() );
+		const n = ( seen.get( key ) || 0 ) + 1;
+		seen.set( key, n );
+		if ( n === 1 ) console.error( 'frame error (the game goes on):', e );
+		else if ( n === 600 ) console.warn( `frame error repeated ${ n } times:`, key );
 
 	}
 

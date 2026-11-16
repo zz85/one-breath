@@ -624,10 +624,13 @@ function shootAt( W, { upgrades = {} } = {} ) {
 	W3.sp.easy = true;
 	W3.game.state.money = 100;
 	shootAt( W3 );
-	for ( let i = 0; i < 600 && W3.sp.phase !== 'home'; i ++ ) {
+	// play it as the Standard grouper test does: keep the line under its hold, take it in hand only
+	// once it is close and tired (grabbing a lively one can tear it free, which says nothing)
+	for ( let i = 0; i < 2400 && W3.sp.phase !== 'home'; i ++ ) {
 
-		W3.frame( 1 / 60, { lmb: true } );
-		W3.input._hit.add( 'KeyE' );
+		const F = W3.sp.fight;
+		if ( F && F.lineOut <= 1.05 && ( F.stamina < 0.3 || F.stoned ) ) W3.input._hit.add( 'KeyE' );
+		W3.frame( 1 / 60, { lmb: ! F || F.tension < F.holdN * 0.5 } );
 
 	}
 
