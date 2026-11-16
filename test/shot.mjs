@@ -38,8 +38,10 @@ await send( 'Runtime.enable' );
 await send( 'Emulation.setDeviceMetricsOverride', { width: 1280, height: 720, deviceScaleFactor: 1, mobile: false } );
 await send( 'Page.navigate', { url } );
 let done = false;
+if ( process.env.WAIT ) { await sleep( Number( process.env.WAIT ) ); done = true; }
 for ( let i = 0; i < 600 && ! done; i ++ ) { await sleep( 250 ); done = await evalJs( 'window.__done === true' ); }
 if ( ! done ) console.error( 'timed out waiting for window.__done' );
+if ( process.env.CLICK ) { await evalJs( `document.querySelector( ${ JSON.stringify( process.env.CLICK ) } )?.click()` ); await sleep( 300 ); }
 const shot = await send( 'Page.captureScreenshot', { format: 'png' } );
 writeFileSync( out, Buffer.from( shot.result.data, 'base64' ) );
 console.log( 'wrote', out, done ? '' : '(not done)' );

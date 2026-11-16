@@ -3,7 +3,7 @@
 //   node test/diver.mjs
 import * as E from '../src/engine/index.js';
 import { Diver, DUCK, resolveLook } from '../src/game/Diver.js';
-import { cleanLook, LOOK_PRESETS, presetLook } from '../src/game/Look.js';
+import { cleanLook, LOOK_PRESETS, presetLook, wearPreset, presetOf } from '../src/game/Look.js';
 import { PlayerDiver } from '../src/game/PlayerDiver.js';
 import { Player } from '../src/player/Player.js';
 import { TerrainData } from '../src/world/TerrainData.js';
@@ -255,6 +255,18 @@ const cl = cleanLook( { pattern: 'plaid', hood: true, legs: true, height: 3, hai
 check( cl === null, `and drops a pattern, a hood, legs, a height or a colour it doesn't (${ JSON.stringify( cl ) })` );
 check( cleanLook( { height: 1.75 } ) === null && cleanLook( { height: 1.624 } ).height === 1.62, 'the default height is left out, a height is kept to the cm' );
 check( Object.keys( LOOK_PRESETS ).length >= 2 && presetLook( 'fluyd' ).pattern === 'strokes' && presetLook( 'floral' ).hood === false && presetLook( 'nobody' ) === null, 'the presets: a Fluyd suit in strokes, a floral swimsuit with no hood' );
+check( presetLook( 'plain' ) === null && LOOK_PRESETS.fluyd.label.startsWith( 'Kim' ), 'the plain suit is no look; the photo presets are Kim\'s' );
+// the picker: a preset dresses the figure whole over the colours you picked, and plain undresses it
+const mine = { suit: 0x1b2a44, accent: 0xff7a1a, fins: 0xd12a2a };
+const worn = wearPreset( mine, 'floral' );
+check( worn.pattern === 'floral' && worn.hood === false && worn.suit === 0xd9d6cc && worn.fins === 0xd12a2a && presetOf( worn ) === 'floral', 'wearing the floral preset: its suit and print, your own fins' );
+check( wearPreset( null, 'floral' ).fins === 0x1f6fd1, 'with no fins of your own, the preset\'s' );
+check( presetOf( { ...worn, fins: 0x111316 } ) === 'floral', 'other fins: still the floral look' );
+check( presetOf( { ...worn, suit: 0x16191c } ) === null, 'another suit colour under the print: no preset' );
+check( presetOf( { ...worn, hood: true } ) === null, 'a hood on it: no preset' );
+const plain = wearPreset( worn, 'plain' );
+check( plain.pattern === undefined && plain.hood === undefined && plain.height === undefined && plain.suit === 0xd9d6cc && presetOf( plain ) === 'plain' && presetOf( mine ) === 'plain', 'plain again: the print, hood, legs and height go, the colours stay' );
+check( presetOf( wearPreset( plain, 'fluyd' ) ) === 'fluyd' && wearPreset( null, 'nobody' ) === null, 'the Fluyd suit over it; an unknown preset is nothing' );
 const R = resolveLook( null, 0.3 );
 check( R.hood && R.legs && R.pattern === 'rubber' && R.height === 1.75 && R.hands === null, 'no look: a hooded black suit, 1.75 m, bare hands' );
 

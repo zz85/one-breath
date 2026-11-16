@@ -389,10 +389,11 @@ export class NetPlay {
 
 	}
 
-	// your suit: worn at once, kept for next time, sent to the dive
+	// your look: worn at once, kept for next time, sent to the dive. The picker gives the whole
+	// look, so it replaces yours; a look without a colour keeps that colour of yours
 	setLook( look ) {
 
-		const l = { ...this.look, ...( cleanLook( look ) || {} ) };
+		const l = { suit: this.look.suit, accent: this.look.accent, fins: this.look.fins, ...( cleanLook( look ) || {} ) };
 		this.look = l;
 		saveLook( l );
 		if ( this.game.me && this.game.me.diver ) this.game.me.diver.setLook( l );

@@ -22,19 +22,21 @@ export const SUIT_COLOURS = {
 
 export const SUIT_PATTERNS = [ 'rubber', 'strokes', 'floral' ];
 
-// Whole looks, from photos of real divers (test/diver.html offers them; a player picks one as a
-// start and the suit picker changes its colours). Colours are linear albedo, as the figure takes them.
+// Whole looks, from photos of real divers: the suit picker and test/diver.html offer them, and a
+// player picks one as a start, then changes its colours. Colours are linear albedo, as the figure
+// takes them. `plain` is the game's own diver, which clears a preset.
 export const LOOK_PRESETS = {
-	// a black Fluyd training suit with cyan brush strokes, a black Salvimar hood, pink gloves
+	plain: { label: 'Plain suit', hood: true, legs: true, pattern: 'rubber', height: 1.75 },
+	// Kim in a black Fluyd training suit with cyan brush strokes, a black Salvimar hood, pink gloves
 	fluyd: {
-		label: 'Fluyd suit, hood, pink gloves',
+		label: 'Kim: Fluyd suit',
 		suit: 0x0c0e10, accent: 0x18b4c4, fins: 0x2e3236, pattern: 'strokes', hood: true, legs: true,
 		skin: 0xa8734f, hands: 0xc26a8e, hair: 0x14100d, height: 1.62,
 	},
-	// a long-sleeved one-piece printed with pink, purple and blue flowers; no hood, dark hair with
-	// sun-bleached ends
+	// Kim in a long-sleeved one-piece printed with pink, purple and blue flowers; no hood, dark
+	// hair with sun-bleached ends
 	floral: {
-		label: 'Floral swimsuit, no hood',
+		label: 'Kim: floral swimsuit',
 		suit: 0xd9d6cc, accent: 0xc44a86, fins: 0x1f6fd1, pattern: 'floral', hood: false, legs: false,
 		skin: 0xa8734f, hair: 0x14100d, height: 1.62,
 	},
@@ -62,13 +64,49 @@ export function cleanLook( raw ) {
 
 }
 
-// a preset by its key, as a look (without its label); null for an unknown key
+// a preset by its key, as a look (without its label); null for an unknown key, and for `plain`,
+// which is no look at all
 export function presetLook( key ) {
 
 	const p = LOOK_PRESETS[ key ];
 	if ( ! p ) return null;
 	const { label, ...look } = p;
 	return cleanLook( look );
+
+}
+
+// a preset put on over a look: the preset's every field, and the look's colours where the preset
+// doesn't set them (the suit, trim and fins a player picked stay under a plain suit). Fins are
+// gear, not the outfit: a player's fins stay, and the preset's are for a player with none.
+export function wearPreset( look, key ) {
+
+	const p = LOOK_PRESETS[ key ];
+	if ( ! p ) return cleanLook( look );
+	const { label, ...fields } = p;
+	const keep = {};
+	for ( const k of [ 'suit', 'accent', 'fins' ] ) if ( look && look[ k ] !== undefined ) keep[ k ] = look[ k ];
+	if ( keep.fins !== undefined ) delete fields.fins;
+	return cleanLook( { ...keep, ...fields } );
+
+}
+
+// the fields that make a preset's outfit, which presetOf compares: everything but the fins; for
+// `plain`, everything a plain suit leaves unset
+const OUTFIT = [ 'suit', 'accent', 'skin', 'hands', 'hair', 'pattern', 'hood', 'legs', 'height' ];
+const PLAIN = [ 'skin', 'hands', 'hair', 'pattern', 'hood', 'legs', 'height' ];
+
+// which preset a look wears: the key whose outfit the look holds, whatever its fins, or null
+export function presetOf( look ) {
+
+	const l = cleanLook( look ) || {};
+	for ( const k in LOOK_PRESETS ) {
+
+		const p = presetLook( k ) || {};
+		if ( ( k === 'plain' ? PLAIN : OUTFIT ).every( ( f ) => l[ f ] === p[ f ] ) ) return k;
+
+	}
+
+	return null;
 
 }
 
