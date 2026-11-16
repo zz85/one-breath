@@ -117,7 +117,10 @@ const FLAT = {
 };
 export function anatomy( model ) {
 
-	return SPECIES[ model ] || FLAT[ model ] || SPECIES.grunt;
+	// FLAT first: SPECIES has entries for the rays and the turtle too, but only their skin (no
+	// top / bot / wid profile), and a hit test on one of those throws
+	const S = SPECIES[ model ];
+	return FLAT[ model ] || ( S && S.top ? S : null ) || SPECIES.grunt;
 
 }
 

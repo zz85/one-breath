@@ -170,5 +170,32 @@ const V = ( x, y, z ) => ( { x, y, z } );
 
 }
 
+// ---- every swimmer's model takes a hit test (a model without a body profile used to throw in the
+// shaft's flight, which stopped the frame loop: the game froze on a shot at a turtle or a ray)
+{
+
+	const { SPECIES } = await import( '../src/world/fish/FishSpecies.js' );
+	const { hitTest: ht, maxRadius: mr } = await import( '../src/game/Spear.js' );
+	for ( const model of Object.keys( SPECIES ) ) {
+
+		let res, err = null;
+		try {
+
+			mr( model );
+			// straight down, at points along the axis (a ray's body sits ahead of its long tail)
+			for ( let x = - 0.5; x <= 0.5 && ! res; x += 0.1 ) res = ht( { x, y: 1, z: 0 }, { x, y: - 1, z: 0 }, { x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, 1, model );
+
+		} catch ( e ) {
+
+			err = e;
+
+		}
+
+		ok( ! err && res, `hit test on a ${ model }${ err ? ': ' + err.message : res ? '' : ': missed' }` );
+
+	}
+
+}
+
 console.log( fails ? `${ fails } failed` : 'all passed' );
 process.exit( fails ? 1 : 0 );
